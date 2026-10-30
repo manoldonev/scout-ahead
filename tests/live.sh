@@ -12,7 +12,7 @@ unset CLAUDECODE
 command -v claude >/dev/null || { echo "SKIP: claude not on PATH"; exit 0; }
 
 WORK="$(mktemp -d -t spike-live.XXXXXX)"
-trap 'rm -rf "$WORK"' EXIT
+trap 'rm -rf "$WORK" "$WORK-spike-worktrees"' EXIT
 cd "$WORK" && git init -q -b main && git config user.email t@example.invalid && git config user.name t
 echo "def add(a, b): return a + b" > calc.py && git add calc.py && git commit -qm init
 SID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
@@ -43,6 +43,16 @@ check "branch created" '[ "$(git branch --show-current)" = "spike/$SLUG" ]'
 check "code explored before deciding (a code: note exists)" 'grep -q "note: code:" "spikes/$SLUG/log.md"'
 check "no decision at start" '[ "$(python3 -c "import json;print(len(json.load(open(\"spikes/$SLUG/state.json\"))[\"decisions\"]))")" = 0 ]'
 check "hook recorded the session transcript" 'grep -q "\"session_id\": \"$SID\"" "spikes/$SLUG/state.json"'
+
+VCAP="${SPIKE_TEST_ARM_USD:-0.35}"
+run variants "/spike:variants 2 'Can add() stay total over floats and ints without a type check? Answer in VARIANT.md only, no code.' --usd $VCAP --model $MODEL" --resume "$SID"
+check "two arms recorded" '[ "$(python3 -c "import json;print(len(json.load(open(\"spikes/$SLUG/state.json\"))[\"variants\"][0][\"arms\"]))")" = 2 ]'
+check "arm results collected" '[ -f "spikes/$SLUG/variants/run-1/v1/result.json" ] && [ -f "spikes/$SLUG/variants/run-1/v2/result.json" ]'
+check "arms ran (a turn count > 0)" 'python3 -c "import json;d=json.load(open(\"spikes/$SLUG/variants/run-1/v1/result.json\"));import sys;sys.exit(0 if (d.get(\"num_turns\") or 0)>0 else 1)"'
+check "arm cost metered into the box" 'python3 -c "import json;import sys;sys.exit(0 if json.load(open(\"spikes/$SLUG/state.json\"))[\"spent\"][\"usd\"]>0 else 1)"'
+check "arms on separate branches" '[ "$(git branch --list "spike/$SLUG-run1-v*" | wc -l | tr -d " ")" = 2 ]'
+check "comparison written to the log" 'grep -qi "variants run 1" "spikes/$SLUG/log.md"'
+git worktree list --porcelain | grep "^worktree .*-spike-worktrees" | cut -d" " -f2 | while read -r w; do git worktree remove --force "$w"; done; git worktree prune
 
 run pivot "/spike:pivot coerce both operands with float() and accept the precision loss" --resume "$SID"
 check "direction 2 open" 'grep -q "## Direction 2:" "spikes/$SLUG/log.md"'

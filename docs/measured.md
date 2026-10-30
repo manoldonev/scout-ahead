@@ -18,6 +18,13 @@ All runs on Claude Code 2.1.314, macOS, `claude -p` with `--plugin-dir`, 2026-10
 - **Variant plumbing.** With a stub `claude` on PATH, two arms ran as separate processes in
   separate sibling worktrees, each receiving `--max-budget-usd` and `--model opus`, each
   committed on its own branch, each result and `VARIANT.md` collected (`tests/test_spike.py`).
+- **Variants with real arms.** `spikes/variants-command/` run 4: two Opus arms, cap $0.75
+  each, on a question about the plugin's own code. Both finished in 8 turns for $0.43 and
+  $0.44, both reached the same recommendation, and both reproduced the same defect by their
+  own experiment in a throwaway repo without seeing each other. The three failed runs before
+  it (1 to 3) were all launch bugs, recorded in that spike's log: arm branches nested under
+  the spike branch, the prompt swallowed by `--allowedTools`, stdin written too late. The
+  scripted live test also runs two arms through the `/spike:variants` skill.
 
 ## Not measured
 
@@ -26,7 +33,9 @@ All runs on Claude Code 2.1.314, macOS, `claude -p` with `--plugin-dir`, 2026-10
   the hook matcher is the same for `auto` and `manual`, so the injection path is shared.
 - **How much of the side constraint survives without the hook.** The brief's figure
   (about 17 percent) was not re-measured.
-- **Variants with real arms** beyond the plugin's own self-spike (`spikes/variants-command/`).
+- **Four arms vs two.** Only two-arm runs were made.
+- **The concurrency race** two arms found (parallel `spike note` calls lose writes) is
+  pre-registered in `spikes/variants-command/handoff.md` and not yet run.
 - **The interactive session's own cost.** Not visible to the plugin; the box meters spawn
   costs and operator-logged hours only.
 - **Successor quality.** Whether a successor session with log + transcript outperforms one

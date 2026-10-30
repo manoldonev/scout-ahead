@@ -53,7 +53,7 @@ else: no tracker, no pipeline, no project layout.
 - `log.md` — question, box, kill criteria, directions in order, what each taught, status
 - `decisions.md` — each decision with who settled it, the evidence pointer, and a supersession marker
 - `handoff.md` — the downstream artifact (`docs/handoff-format.md`)
-- `state.json` — the machine view the three files above are rendered from; edit through the commands, not by hand
+- `state.json` — the machine view `log.md` and `decisions.md` are rendered from on every command, and `handoff.md` on `/spike:handoff`; the rendered files carry a banner saying so, because a hand edit is overwritten by the next command
 - `variants/run-<n>/v<i>/` — each arm's result, output and diff stat
 
 Pointers, not copies: branches, commits, file:line, transcript paths.
