@@ -81,7 +81,7 @@ def save(root, st):
         (d / "handoff.md").write_text(render_handoff(st))
 
 
-def current_slug(root, explicit=None, allow_closed=False):
+def current_slug(root, explicit=None, allow_closed=True):
     if explicit:
         return explicit
     p = root / CURRENT
@@ -539,7 +539,7 @@ def cmd_status(args):
                 print(f"      ? {q['text']}")
 
 
-def context_text(st):
+def context_text(st, current_session=None):
     L = [f"Open spike: {st['question']} (spikes/{st['slug']}/)"]
     L.append(f"Branch: {st['branch'] or '(none)'}. Box: {box_line(st)}.")
     if st["kill"]:
@@ -557,8 +557,10 @@ def context_text(st):
         L.append("Parked questions (raise only at a pivot, a close, or when asked): " + "; ".join(q["text"] for q in qs))
     L.append(f"Read spikes/{st['slug']}/log.md before continuing. Do not ask the operator mid-build; park questions with `spike question`.")
     if st["sessions"]:
-        last = st["sessions"][-1]
-        L.append(f"Raw transcript of the previous session: {last.get('transcript_path')}")
+        L.append("Raw transcripts, newest last (the trace beats notes for a successor):")
+        for s in st["sessions"][-3:]:
+            tag = " (this session)" if s["session_id"] == current_session else ""
+            L.append(f"  - {s.get('transcript_path') or s['session_id']}{tag}")
     return "\n".join(L)
 
 
@@ -602,7 +604,7 @@ def cmd_hook_session_start(args):
     head = {"compact": "Context was just compacted. The spike below is the side constraint that survives it.",
             "resume": "Resumed session. The spike below is where the previous session left off.",
             "clear": "Context cleared. An open spike is still in progress."}.get(source, "An open spike is in progress in this repository.")
-    text = head + "\n\n" + context_text(st)
+    text = head + "\n\n" + context_text(st, sess["session_id"])
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}}))
 
 
