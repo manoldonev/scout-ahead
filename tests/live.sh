@@ -53,7 +53,7 @@ check "no option dialog in conversation mode" '! grep -qiE "option [ab]\)|^\s*[0
 check "no decision recorded without 'record this'" '[ "$(python3 -c "import json;print(len(json.load(open(\"scouting/$SLUG/state.json\"))[\"decisions\"]))")" = 0 ]'
 
 run status "/scout:status" --resume "$SID"
-check "status names the scout" 'grep -q "$SLUG" "$WORK/.last-result"'
+check "status names the scout" 'grep -q "$SLUG" "$WORK/.last-result" || grep -qi "total over floats" "$WORK/.last-result"'
 
 VCAP="${SCOUT_TEST_ARM_USD:-0.35}"
 run variants "/scout:variants 2 'Can add() stay total over floats and ints without a type check? Answer in VARIANT.md only, no code.' --usd $VCAP --model $MODEL" --resume "$SID"

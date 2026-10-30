@@ -9,4 +9,4 @@ description: Use when the operator asks where the scouts stand — which are ope
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scout.py" status -v
 ```
 
-Relay the output as is, then one line of judgment: which scout is nearest its box or its kill criteria.
+Reply with the command's output verbatim in a fenced code block, then one line of judgment: which scout is nearest its box or its kill criteria.
