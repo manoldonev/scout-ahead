@@ -81,7 +81,7 @@ class ScoutRepo(unittest.TestCase):
         for heading in ["## Question", "## Status", "## Decisions", "## Open questions", "## Pointers", "## Pre-registration", "## Thrown away"]:
             self.assertIn(heading, out)
         self.assertIn("| D2 | ship the bypass | operator | transcript |", out)
-        self.assertIn("| D1 | use the existing cache | code | a.txt:1 | direction 2 |", out)
+        self.assertIn("| D1 | use the existing cache | code, inferred | a.txt:1 | direction 2 |", out)
         self.assertIn("- D3: cache eviction policy", out)
         self.assertIn(f"- base: `{self.base}`", out)
         self.assertIn("p50 under 10ms", out)
@@ -208,7 +208,7 @@ class ScoutRepo(unittest.TestCase):
         self.assertIn("Does it survive compaction?", ctx)
         self.assertIn("Current direction (1)", ctx)
         self.assertIn("first thread", ctx)
-        self.assertIn("D1 render md from state [code]", ctx)
+        self.assertIn("D1 render md from state [code, inferred]", ctx)
         self.assertIn("is the window configurable?", ctx)
         self.assertIn("Kill when: no injection in two runs", ctx)
         self.assertIn("/nowhere/s1.jsonl", ctx, "successor gets the previous session's raw transcript path")
