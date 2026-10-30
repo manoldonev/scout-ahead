@@ -18,7 +18,7 @@ Run `n` arms (2 to 4) of one question, each a separate `claude -p` process in it
 
    Defaults: `--usd 2` per arm, `--model opus`, `--tools Bash` (each arm may run commands inside its own worktree; pass `--tools ""` to forbid). The command blocks until every arm finishes or times out, then prints one table: arm, branch, cost, turns, files changed, status.
 
-3. Compare the arms as evidence, not as candidates to vote on. Read each `spikes/<slug>/variants/run-<id>/v<i>/VARIANT.md` and `output.md`, and `git diff <base>..spike/<slug>/run<id>-v<i>` for the ones that built something. Write the comparison into the log, in sentences, with pointers:
+3. Compare the arms as evidence, not as candidates to vote on. Read each `spikes/<slug>/variants/run-<id>/v<i>/VARIANT.md` and `output.md`, and `git diff <base>..spike/<slug>-run<id>-v<i>` for the ones that built something. Write the comparison into the log, in sentences, with pointers:
 
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/spike.py" note "variants run <id>: <what the arms agreed on>; <where they diverged and why>; <which assumption each made>"

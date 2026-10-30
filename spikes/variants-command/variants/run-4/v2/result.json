@@ -1,0 +1,101 @@
+{
+  "duration_api_ms": 49120,
+  "stop_reason": "end_turn",
+  "session_id": "fbe034da-1042-4208-a43c-34ebe6c530e2",
+  "total_cost_usd": 0.4358408,
+  "usage": {
+    "input_tokens": 16,
+    "cache_creation_input_tokens": 35005,
+    "cache_read_input_tokens": 314084,
+    "output_tokens": 4646,
+    "output_tokens_details": {
+      "thinking_tokens": 614
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 35005,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 663,
+        "cache_read_input_tokens": 45961,
+        "cache_creation_input_tokens": 2250,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 2250
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 16,
+      "outputTokens": 4646,
+      "cacheReadInputTokens": 314084,
+      "cacheCreationInputTokens": 35005,
+      "webSearchRequests": 0,
+      "costUSD": 0.4358408,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 614,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 35005,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 8,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "I recommend keeping the current design, where the three markdown files are rendered from `state.json` on every save, with one added guard. `VARIANT.md` at the repo root has the full write-up; `spike.py` is untouched and nothing is committed.\n\n**Why rendering wins:** the markdown is a view of state that changes, not a log of events. Several commands rewrite earlier content:\n- `pivot --supersedes` adds a \"superseded by\" line inside an old decision. I confirmed this with a diff in a throwaway repo.\n- `pivot` and `close` fill in the previous direction's closing details, and `answer` ticks off a parked question that was written earlier.\n- `handoff.md` is a fixed-heading snapshot, so it can't be appended to at all.\n\n**Strongest argument against it:** anything a person or agent writes into these files by hand is erased by the next command, with no warning. I reproduced this: after a hand-written line was added to `log.md`, one `note` command removed it (`grep -c` returned 0). The proposed guard is to store a hash of what was last rendered and warn if the file changed in between.\n\n**Failure case for each approach:**\n- **Rendering:** a note an agent typed directly into `log.md` disappears on the next `spike.py note`.\n- **Appending:** after `pivot --supersedes D1`, decision D1 still reads as live in `decisions.md` and in the handoff, so the next session acts on a decision the spike already overturned.\n\n**Related problem neither approach fixes:** `cmd_variants` loads state, runs the arms for minutes, then saves (`spike.py:796` to `818`). Any `note` or `decide` the operator runs during that window is lost from `state.json`. I found this by reading the code and did not reproduce it; the fix would be to reload and merge before saving, or to use a lock.\n\nThe write-up also lists what to measure next and every assumption I made.",
+  "ttft_ms": 1297,
+  "type": "result",
+  "duration_ms": 53555,
+  "uuid": "a741fb17-9ff9-425c-86ca-5c733e8fb1ef",
+  "ttft_stream_ms": 632,
+  "time_to_request_ms": 37,
+  "first_content_frame_ms": 632,
+  "queued_turn_count": 0,
+  "result_index": 0
+}

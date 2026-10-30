@@ -1,0 +1,305 @@
+{
+  "slug": "variants-command",
+  "question": "Do two arms in sibling worktrees with per-arm dollar caps give comparable evidence headless?",
+  "opened_at": "2026-10-30T12:22:00+00:00",
+  "closed_at": "2026-10-30T12:29:50+00:00",
+  "status": "closed",
+  "outcome": "commit",
+  "box": {
+    "hours": 1.0,
+    "usd": 3.0
+  },
+  "spent": {
+    "hours": 0.0,
+    "usd": 1.2939872000000001
+  },
+  "kill": [
+    "arms cannot run in parallel without seeing each other, or a cap is not enforced"
+  ],
+  "branch": "spike/variants-command",
+  "base": "8fdb134d193d05a99d56702393484097c348bfec",
+  "head": "6099da7e9607d05686d1c07facbf518bc2e5863e",
+  "directions": [
+    {
+      "text": "prove the plumbing with a stub claude, then run two real arms on Opus with a small cap",
+      "opened_at": "2026-10-30T12:22:00+00:00",
+      "entries": [
+        {
+          "at": "2026-10-30T12:22:00+00:00",
+          "kind": "note",
+          "text": "code: cmd_variants in scripts/spike.py refuses n outside 2..4 and a dirty tree, creates sibling worktrees under ../<repo>-spike-worktrees/<slug>-run<id>-v<i> on branches spike/<slug>/run<id>-v<i>, starts every arm as its own 'claude -p --model opus --max-budget-usd <cap> --output-format json' process with CLAUDECODE unset, waits, commits each arm's worktree, copies VARIANT.md, result.json and output.md under spikes/<slug>/variants/run-<id>/v<i>/, adds the costs to the box and prints one table."
+        },
+        {
+          "at": "2026-10-30T12:22:00+00:00",
+          "kind": "note",
+          "text": "measured: tests/test_spike.py test_variants_with_stub_claude passes: two arms, separate worktrees, each argv carries --max-budget-usd 0.5 and --model opus, each arm committed on its own branch, VARIANT.md collected, spent.usd summed to 0.50."
+        },
+        {
+          "at": "2026-10-30T12:22:32+00:00",
+          "kind": "note",
+          "text": "found on the first real run: 'git worktree add -b spike/variants-command/run1-v1' fails with 'cannot lock ref: refs/heads/spike/variants-command exists'. A branch cannot be a directory of another ref, so arm branches cannot nest under the spike branch. The stub test did not catch it because the stub spike used --no-branch."
+        },
+        {
+          "at": "2026-10-30T12:22:32+00:00",
+          "kind": "decision D1 (code)",
+          "text": "arm branches are named spike/<slug>-run<id>-v<i>, flat beside the spike branch, never nested under it"
+        },
+        {
+          "at": "2026-10-30T12:22:40+00:00",
+          "kind": "variants",
+          "text": "run 1: 2 arms on 'Should the three markdown files under spikes/<slug>/ be rendered from state.json on every command, or appended to directly? Read plugins/spike/scripts/spike.py and write VARIANT.md with a recommendation, the strongest argument against it, and one concrete failure case for each approach. Do not modify spike.py.', total $0.00"
+        },
+        {
+          "at": "2026-10-30T12:23:27+00:00",
+          "kind": "note",
+          "text": "found on run 1: both arms died in 0 turns with 'Input must be provided either through stdin or as a prompt argument'. --allowedTools takes a space-separated list and swallowed the prompt argument that followed it. Run 1 stays in the log at $0.00 as the record of that. Fix: the prompt goes to the arm on stdin, never as a positional after a list flag. Also: the CLI creates .claude/ in each worktree at startup; it is excluded from the arm's commit."
+        },
+        {
+          "at": "2026-10-30T12:23:27+00:00",
+          "kind": "decision D2 (code)",
+          "text": "arm prompts are passed on stdin; argv carries only flags"
+        },
+        {
+          "at": "2026-10-30T12:24:24+00:00",
+          "kind": "variants",
+          "text": "run 2: 2 arms on 'Should the three markdown files under spikes/<slug>/ be rendered from state.json on every command, or appended to directly? Read plugins/spike/scripts/spike.py and write VARIANT.md with a recommendation, the strongest argument against it, and one concrete failure case for each approach. Do not modify spike.py.', total $0.43"
+        },
+        {
+          "at": "2026-10-30T12:25:08+00:00",
+          "kind": "note",
+          "text": "found on run 2: v1 ran ($0.43, 9 turns, a real VARIANT.md) but v2 died with 'no stdin data received in 3s'. Arms were launched together and their prompts written one at a time at collection, so the second arm's stdin stayed empty past the CLI's wait. The prompt is now written and closed at launch. Run 2 stays in the log as the record."
+        },
+        {
+          "at": "2026-10-30T12:25:08+00:00",
+          "kind": "decision D3 (code)",
+          "text": "every arm's stdin is written and closed at launch; collection only waits"
+        },
+        {
+          "at": "2026-10-30T12:26:15+00:00",
+          "kind": "note",
+          "text": "found on run 3 (first attempt): Python's communicate() raised 'I/O operation on closed file' because stdin had been closed at launch; the two arms ran orphaned, were stopped by hand, and their worktrees removed. proc.stdin is now set to None after the close. The run-3 folder is reused by the rerun."
+        },
+        {
+          "at": "2026-10-30T12:26:51+00:00",
+          "kind": "note",
+          "text": "found: the aborted run left branches spike/variants-command-run3-v1 and -v2 behind, and the rerun refused to recreate them. The script now numbers a run above every arm branch it finds, so an aborted run never blocks the next one; it never deletes branches."
+        },
+        {
+          "at": "2026-10-30T12:26:51+00:00",
+          "kind": "decision D4 (code)",
+          "text": "a variants run id is one above both the recorded runs and any leftover arm branch; the script never deletes a branch"
+        },
+        {
+          "at": "2026-10-30T12:28:53+00:00",
+          "kind": "variants",
+          "text": "run 4: 2 arms on 'Should the three markdown files under spikes/<slug>/ be rendered from state.json on every command, or appended to directly? Read plugins/spike/scripts/spike.py and write VARIANT.md with a recommendation, the strongest argument against it, and one concrete failure case for each approach. Do not modify spike.py.', total $0.87"
+        },
+        {
+          "at": "2026-10-30T12:29:49+00:00",
+          "kind": "note",
+          "text": "variants run 4 compared: both arms recommend keeping the render-from-state design; both independently reproduced the same defect by experiment in a throwaway repo (a hand edit to log.md is silently erased by the next command); v1 also measured a load-modify-save race (10 parallel notes, 3 survived) and handoff.md churn on every save; v2 found that a long variants run loses notes made meanwhile. They diverged only on the remedy: v1 proposes a lock plus atomic writes, v2 a rendered-content hash that turns a silent overwrite into a loud one. Pointers: spikes/variants-command/variants/run-4/v1/VARIANT.md, v2/VARIANT.md; branches spike/variants-command-run4-v1, -v2."
+        },
+        {
+          "at": "2026-10-30T12:29:49+00:00",
+          "kind": "decision D5 (code)",
+          "text": "rendered files carry a one-line generated-from-state banner, and handoff.md is rendered only by the handoff command"
+        },
+        {
+          "at": "2026-10-30T12:29:49+00:00",
+          "kind": "decision D6 (open)",
+          "text": "whether to add a lock (v1) or a rendered-content hash guard (v2) against lost writes"
+        },
+        {
+          "at": "2026-10-30T12:29:49+00:00",
+          "kind": "pre-registered",
+          "text": "do concurrent spike commands lose writes, and does a file lock around load-save stop it? \u2014 arms: current script; script with an exclusive lock around load-modify-save; runs: 5 runs of 10 parallel 'spike note' per arm; pass: the locked arm keeps 10 of 10 notes in state.json and log.md in all 5 runs; the current arm is the baseline; cost $0.0"
+        }
+      ],
+      "closed_at": "2026-10-30T12:29:50+00:00",
+      "closed_by": "close",
+      "learned": "two capped Opus arms in sibling worktrees cost about $0.43 each and converge on the same recommendation while finding the same defect by independent experiment; the comparison is evidence, and the divergence (lock vs hash guard) is the measurable question. The command's real bugs were all in how the arm is launched, none in the comparison."
+    }
+  ],
+  "decisions": [
+    {
+      "id": "D1",
+      "text": "arm branches are named spike/<slug>-run<id>-v<i>, flat beside the spike branch, never nested under it",
+      "by": "code",
+      "evidence": "git refs/heads layout; scripts/spike.py _run_arm",
+      "direction": 1,
+      "at": "2026-10-30T12:22:32+00:00",
+      "superseded_by": null
+    },
+    {
+      "id": "D2",
+      "text": "arm prompts are passed on stdin; argv carries only flags",
+      "by": "code",
+      "evidence": "spikes/variants-command/variants/run-1/v1/stderr.txt; scripts/spike.py _run_arm",
+      "direction": 1,
+      "at": "2026-10-30T12:23:27+00:00",
+      "superseded_by": null
+    },
+    {
+      "id": "D3",
+      "text": "every arm's stdin is written and closed at launch; collection only waits",
+      "by": "code",
+      "evidence": "spikes/variants-command/variants/run-2/v2/stderr.txt; scripts/spike.py _run_arm",
+      "direction": 1,
+      "at": "2026-10-30T12:25:08+00:00",
+      "superseded_by": null
+    },
+    {
+      "id": "D4",
+      "text": "a variants run id is one above both the recorded runs and any leftover arm branch; the script never deletes a branch",
+      "by": "code",
+      "evidence": "scripts/spike.py next_run_id",
+      "direction": 1,
+      "at": "2026-10-30T12:26:51+00:00",
+      "superseded_by": null
+    },
+    {
+      "id": "D5",
+      "text": "rendered files carry a one-line generated-from-state banner, and handoff.md is rendered only by the handoff command",
+      "by": "code",
+      "evidence": "run-4 v1 and v2 VARIANT.md hand-edit experiment; scripts/spike.py GENERATED, cmd_handoff",
+      "direction": 1,
+      "at": "2026-10-30T12:29:49+00:00",
+      "superseded_by": null
+    },
+    {
+      "id": "D6",
+      "text": "whether to add a lock (v1) or a rendered-content hash guard (v2) against lost writes",
+      "by": "open",
+      "evidence": null,
+      "direction": 1,
+      "at": "2026-10-30T12:29:49+00:00",
+      "superseded_by": null
+    }
+  ],
+  "questions": [],
+  "variants": [
+    {
+      "id": 1,
+      "at": "2026-10-30T12:22:40+00:00",
+      "n": 2,
+      "question": "Should the three markdown files under spikes/<slug>/ be rendered from state.json on every command, or appended to directly? Read plugins/spike/scripts/spike.py and write VARIANT.md with a recommendation, the strongest argument against it, and one concrete failure case for each approach. Do not modify spike.py.",
+      "cap_usd": 0.75,
+      "model": "opus",
+      "arms": [
+        {
+          "i": 1,
+          "branch": "spike/variants-command-run1-v1",
+          "worktree": "/Users/manoldonev/work/spike-spike-worktrees/variants-command-run1-v1",
+          "commit": "46b5d0c7e393c7af66508e48239461d3b0950901",
+          "cost_usd": 0.0,
+          "turns": null,
+          "status": "error",
+          "exit_code": 1,
+          "files_changed": 1,
+          "session_id": null
+        },
+        {
+          "i": 2,
+          "branch": "spike/variants-command-run1-v2",
+          "worktree": "/Users/manoldonev/work/spike-spike-worktrees/variants-command-run1-v2",
+          "commit": "dc3682d0f5155725575ba64470fb4f61cf2876b7",
+          "cost_usd": 0.0,
+          "turns": null,
+          "status": "error",
+          "exit_code": 1,
+          "files_changed": 1,
+          "session_id": null
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "at": "2026-10-30T12:24:24+00:00",
+      "n": 2,
+      "question": "Should the three markdown files under spikes/<slug>/ be rendered from state.json on every command, or appended to directly? Read plugins/spike/scripts/spike.py and write VARIANT.md with a recommendation, the strongest argument against it, and one concrete failure case for each approach. Do not modify spike.py.",
+      "cap_usd": 0.75,
+      "model": "opus",
+      "arms": [
+        {
+          "i": 1,
+          "branch": "spike/variants-command-run2-v1",
+          "worktree": "/Users/manoldonev/work/spike-spike-worktrees/variants-command-run2-v1",
+          "commit": "c0c8ae7385adf7f28ecc5c426bed4bf313dd036e",
+          "cost_usd": 0.4252758,
+          "turns": 9,
+          "status": "success",
+          "exit_code": 0,
+          "files_changed": 1,
+          "session_id": "8f66e94c-f1d0-4e98-b488-392b1e2bd4a0"
+        },
+        {
+          "i": 2,
+          "branch": "spike/variants-command-run2-v2",
+          "worktree": "/Users/manoldonev/work/spike-spike-worktrees/variants-command-run2-v2",
+          "commit": null,
+          "cost_usd": 0.0,
+          "turns": null,
+          "status": "error",
+          "exit_code": 1,
+          "files_changed": 0,
+          "session_id": null
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "at": "2026-10-30T12:28:53+00:00",
+      "n": 2,
+      "question": "Should the three markdown files under spikes/<slug>/ be rendered from state.json on every command, or appended to directly? Read plugins/spike/scripts/spike.py and write VARIANT.md with a recommendation, the strongest argument against it, and one concrete failure case for each approach. Do not modify spike.py.",
+      "cap_usd": 0.75,
+      "model": "opus",
+      "arms": [
+        {
+          "i": 1,
+          "branch": "spike/variants-command-run4-v1",
+          "worktree": "/Users/manoldonev/work/spike-spike-worktrees/variants-command-run4-v1",
+          "commit": "3ad680106a2e3d2fa0741555b6f3d4f10c504b01",
+          "cost_usd": 0.43287060000000005,
+          "turns": 8,
+          "status": "success",
+          "exit_code": 0,
+          "files_changed": 1,
+          "session_id": "17c11d90-d3ee-43e2-bb78-d88d92d1a18f"
+        },
+        {
+          "i": 2,
+          "branch": "spike/variants-command-run4-v2",
+          "worktree": "/Users/manoldonev/work/spike-spike-worktrees/variants-command-run4-v2",
+          "commit": "1cade61eb5c2b0d64d4d5940dcb44e07b7216620",
+          "cost_usd": 0.4358408,
+          "turns": 8,
+          "status": "success",
+          "exit_code": 0,
+          "files_changed": 1,
+          "session_id": "fbe034da-1042-4208-a43c-34ebe6c530e2"
+        }
+      ]
+    }
+  ],
+  "sessions": [
+    {
+      "session_id": "0e3c3ce1-0054-4278-8f9c-7ca95a26652a",
+      "transcript_path": "/Users/manoldonev/.claude/projects/-Users-manoldonev-work-sales/0e3c3ce1-0054-4278-8f9c-7ca95a26652a.jsonl",
+      "recorded_at": "2026-10-30T12:22:00+00:00"
+    }
+  ],
+  "prereg": {
+    "question": "do concurrent spike commands lose writes, and does a file lock around load-save stop it?",
+    "arms": "current script; script with an exclusive lock around load-modify-save",
+    "runs": "5 runs of 10 parallel 'spike note' per arm",
+    "pass_rule": "the locked arm keeps 10 of 10 notes in state.json and log.md in all 5 runs; the current arm is the baseline",
+    "cost_usd": 0.0,
+    "at": "2026-10-30T12:29:49+00:00"
+  },
+  "close": {
+    "tried": "stub plumbing; real arms, which failed three times on launch mechanics (nested branch names, prompt swallowed by a list flag, stdin written too late) before run 4 produced two independent answers",
+    "learned": "two capped Opus arms in sibling worktrees cost about $0.43 each and converge on the same recommendation while finding the same defect by independent experiment; the comparison is evidence, and the divergence (lock vs hash guard) is the measurable question. The command's real bugs were all in how the arm is launched, none in the comparison.",
+    "thrown_away": "nested arm branch names; prompt as a positional argument; arms launched without their prompt"
+  },
+  "updated_at": "2026-10-30T12:29:50+00:00"
+}
