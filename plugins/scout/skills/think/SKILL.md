@@ -28,6 +28,15 @@ Read `scouting/<slug>/log.md` first if it is not already in context (the open sc
 
   They are raised at a boundary: a pivot, a close, or when the operator asks.
 
+- Every fake is recorded when you make it (a mocked call, a fixture, a hard-coded value), and unstubbed with a pointer when the real thing replaces it:
+
+  ```
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scout.py" stub "<what is faked, in one sentence>"
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scout.py" unstub S1 "<file:line or commit of the real thing>"
+  ```
+
+  Never stub the part the question is about; blocked on access means `question`, not a mock.
+
 ## Recording a decision
 
 Only when the operator says "record this" (or an unmistakable equivalent):

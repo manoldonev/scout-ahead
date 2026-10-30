@@ -195,6 +195,33 @@ def live_decisions(st):
     return [d for d in st["decisions"] if not d.get("superseded_by")]
 
 
+def criteria(st):
+    return ([(f"K{i}", t) for i, t in enumerate(st["kill"], 1)]
+            + [(f"P{i}", t) for i, t in enumerate(st.get("keep") or [], 1)])
+
+
+def criteria_lines(st, keep_label, kill_label):
+    L = []
+    for label, prefix in ((keep_label, "P"), (kill_label, "K")):
+        items = [f"{cid} {t}" for cid, t in criteria(st) if cid.startswith(prefix)]
+        if items:
+            L.append(f"{label}: " + "; ".join(items) + ".")
+    return L
+
+
+def open_stubs(st):
+    return [s for s in st.get("stubs", []) if not s.get("unstubbed")]
+
+
+def direction_outcome(d):
+    parts = []
+    if d.get("learned"):
+        parts.append(f"learned: {d['learned']}")
+    if d.get("evidence"):
+        parts.append(f"turned on: {evidence_label(d)}")
+    return "; ".join(parts)
+
+
 def read_session_file(root):
     p = root / SESSION
     if p.exists():
@@ -238,11 +265,8 @@ def render_log(st):
     L.append(f"Opened {short(st['opened_at'])} on branch `{st['branch'] or '(no branch)'}` from `{st['base'][:12] if st['base'] else '?'}`.")
     b = st["box"]
     L.append(f"Box: {b.get('hours', '—')} hours, ${b.get('usd', '—')}. Spent: {box_line(st)}.")
-    if st.get("keep"):
-        L.append("Keep if: " + "; ".join(st["keep"]) + ".")
-    if st["kill"]:
-        L.append("Kill when: " + "; ".join(st["kill"]) + ".")
-    else:
+    L += criteria_lines(st, "Keep if", "Kill when")
+    if not st["kill"]:
         L.append("Kill when: (no kill criteria recorded).")
     L.append(f"Status: {st['status']}" + (f" ({st['outcome']})" if st.get("outcome") else "") + ".")
     L.append("")
@@ -254,7 +278,8 @@ def render_log(st):
             L.append(f"- {short(e['at'])} {e['kind']}: {e['text']}")
         if d.get("closed_at"):
             how = d.get("closed_by", "pivot")
-            L.append(f"- {short(d['closed_at'])} closed by {how}. Learned: {d.get('learned') or '(nothing recorded)'}")
+            L.append(f"- {short(d['closed_at'])} closed by {how}. Learned: {d.get('learned') or '(nothing recorded)'}"
+                     + (f"; turned on: {evidence_label(d)}" if d.get("evidence") else ""))
         L.append("")
     if st.get("variants"):
         L.append("## Variants")
@@ -269,6 +294,15 @@ def render_log(st):
             L.append("")
             L.append(f"Outputs under `scouting/{st['slug']}/variants/run-{run['id']}/`.")
             L.append("")
+    if st.get("stubs"):
+        L.append("## Stubbed")
+        L.append("")
+        for sb in st["stubs"]:
+            line = f"- {sb['id']} {sb['text']} (direction {sb['direction']}, {short(sb['at'])})"
+            if sb.get("unstubbed"):
+                line += f" → unstubbed {short(sb.get('unstubbed_at'))}: {sb['unstubbed']}"
+            L.append(line)
+        L.append("")
     if st["questions"]:
         L.append("## Questions parked for the next boundary")
         L.append("")
@@ -338,13 +372,20 @@ def render_handoff(st, top=None):
     L.append("")
     status = st["status"] + (f", {st['outcome']}" if st.get("outcome") else "")
     L.append(f"{status}. {len(st['directions'])} direction(s) tried. Box: {box_line(st)}.")
-    if st.get("keep"):
-        L.append("Keep criteria: " + "; ".join(st["keep"]) + ".")
-    if st["kill"]:
-        L.append("Kill criteria: " + "; ".join(st["kill"]) + ".")
+    L.append("The box is what the scout spent, without tests, error handling or edge cases; it is not an estimate for the real build.")
     c = st.get("close") or {}
+    fired = c.get("fired")
+    if fired:
+        for cid, t in criteria(st):
+            L.append(f"{cid} {t}: " + ("fired" if cid in fired else "did not fire"))
+    else:
+        L += criteria_lines(st, "Keep criteria", "Kill criteria")
+        if fired is not None:
+            L.append("Criteria: none fired.")
     if c.get("verdict"):
         L.append(f"Verdict on the question: {c['verdict'].upper()}" + (f" — {c['verdict_note']}" if c.get("verdict_note") else ""))
+    if c.get("blast_radius"):
+        L.append(f"Blast radius: {c['blast_radius']}")
     if c.get("learned"):
         L.append("")
         L.append("Learned: " + c["learned"])
@@ -374,10 +415,14 @@ def render_handoff(st, top=None):
     L.append("## Pointers")
     L.append("")
     L.append(f"- branch: `{st['branch'] or '(none)'}`" + branch_mark(st["branch"], st["base"], top))
+    if st["branch"]:
+        L.append(f"- `{st['branch']}` is evidence: re-run it, cite it, never merge it; what it proved is rebuilt under the receiving track's own rules.")
     L.append(f"- base: `{st['base'] or '?'}`")
     L.append(f"- head: `{st.get('head') or '?'}`")
     for i, d in enumerate(st["directions"], 1):
-        L.append(f"- direction {i}: {d['text']} (opened {short(d['opened_at'])}" + (f", closed {short(d['closed_at'])}" if d.get("closed_at") else "") + ")")
+        outcome = direction_outcome(d)
+        L.append(f"- direction {i}: {d['text']} (opened {short(d['opened_at'])}" + (f", closed {short(d['closed_at'])}" if d.get("closed_at") else "") + ")"
+                 + (f" — {outcome}" if outcome else ""))
     # Arms fork from the scout's head, not its base; the arm line shows its own commit instead.
     for run in st.get("variants", []):
         for a in run["arms"]:
@@ -387,6 +432,11 @@ def render_handoff(st, top=None):
     L.append(f"- log: scouting/{st['slug']}/log.md")
     L.append(f"- decisions: scouting/{st['slug']}/decisions.md")
     L.append("")
+    if c.get("repro"):
+        L.append("## Reproducing")
+        L.append("")
+        L.append(c["repro"])
+        L.append("")
     if st.get("prereg"):
         p = st["prereg"]
         L.append("## Pre-registration")
@@ -404,10 +454,11 @@ def render_handoff(st, top=None):
     L.append("")
     L.append("## Still unknown")
     L.append("")
-    if c.get("unknown"):
-        for u in c["unknown"]:
-            L.append(f"- {u}")
-    else:
+    for u in c.get("unknown") or []:
+        L.append(f"- {u}")
+    for sb in open_stubs(st):
+        L.append(f"- stubbed: {sb['id']} {sb['text']}")
+    if not c.get("unknown") and not open_stubs(st):
         L.append("(nothing recorded; a scout that names what it did not settle bounds its own authority)")
     L.append("")
     return "\n".join(L)
@@ -484,6 +535,34 @@ def cmd_question(args):
     _entry(st, "question parked", args.text)
     save(root, st)
     print(f"parked for the next boundary ({len([q for q in st['questions'] if not q['answered']])} open)")
+
+
+def cmd_stub(args):
+    read_stdin_fields(args)
+    root = scouts_root(args)
+    st = load(root, current_slug(root, args.scout))
+    stubs = st.setdefault("stubs", [])
+    sid = f"S{len(stubs) + 1}"
+    stubs.append({"id": sid, "text": args.text, "at": now(), "direction": len(st["directions"]), "unstubbed": None})
+    _entry(st, f"stubbed {sid}", args.text)
+    save(root, st)
+    print(f"{sid} recorded; re-read it against the question before any verdict ({len(open_stubs(st))} open)")
+
+
+def cmd_unstub(args):
+    read_stdin_fields(args)
+    root = scouts_root(args)
+    st = load(root, current_slug(root, args.scout))
+    hit = [sb for sb in st.get("stubs", []) if sb["id"] == args.id]
+    if not hit:
+        die(f"no stub {args.id}")
+    if hit[0].get("unstubbed"):
+        die(f"{args.id} is already unstubbed")
+    hit[0]["unstubbed"] = args.evidence
+    hit[0]["unstubbed_at"] = now()
+    _entry(st, f"unstubbed {args.id}", f"{hit[0]['text']} → {args.evidence}")
+    save(root, st)
+    print(f"{args.id} unstubbed ({len(open_stubs(st))} open)")
 
 
 def cmd_answer(args):
@@ -610,6 +689,7 @@ def cmd_pivot(args):
     cur["closed_at"] = now()
     cur["closed_by"] = "pivot"
     cur["learned"] = args.learned
+    cur["evidence"] = args.evidence
     n_new = len(st["directions"]) + 1
     operator_marked = []
     for sid in args.supersedes or []:
@@ -636,21 +716,40 @@ def cmd_pivot(args):
                 print(f"  ? {q['text']}")
 
 
+def check_verdict_evidence(st, args):
+    v = args.verdict
+    if v == "proven" and not [d for d in live_decisions(st) if d["by"] == "code" and d.get("proof") == "proved"]:
+        die("a proven verdict needs at least one observed decision; record it, or use conditional/unanswered")
+    if v == "disproven" and not (args.verdict_note and args.repro):
+        die("a disproven verdict needs --verdict-note (the wall, and why it is structural) and --repro (the command that shows it)")
+    if v == "conditional" and not (args.verdict_note and args.blast_radius):
+        die("a conditional verdict needs --verdict-note (the constraint held fixed) and --blast-radius (what depends on it)")
+    if args.blast_radius and v != "conditional":
+        die("--blast-radius applies to a conditional verdict only")
+    known = [cid for cid, _ in criteria(st)]
+    unknown = [f for f in args.fired or [] if f not in known]
+    if unknown:
+        die(f"no criterion {', '.join(unknown)}; the criteria are " + (", ".join(known) or "(none recorded)"))
+
+
 def cmd_close(args):
     read_stdin_fields(args)
     root = scouts_root(args)
     st = load(root, current_slug(root, args.scout))
     if st["status"] == "closed":
         die("already closed")
+    check_verdict_evidence(st, args)
     cur = cur_direction(st)
     cur["closed_at"] = now()
     cur["closed_by"] = "close"
     cur["learned"] = args.learned or cur.get("learned")
+    cur["evidence"] = args.evidence or cur.get("evidence")
     st["status"] = "closed"
     st["outcome"] = args.outcome
     st["closed_at"] = now()
     st["close"] = {"tried": args.tried, "learned": args.learned, "thrown_away": args.thrown_away,
-                   "verdict": args.verdict, "verdict_note": args.verdict_note, "unknown": args.unknown or []}
+                   "verdict": args.verdict, "verdict_note": args.verdict_note, "unknown": args.unknown or [],
+                   "repro": args.repro, "blast_radius": args.blast_radius, "fired": args.fired or []}
     top = root.parent
     st["head"] = git(["rev-parse", "HEAD"], cwd=top, check=False) or st.get("head")
     save(root, st)
@@ -707,6 +806,9 @@ def cover_gaps(st, text):
     for q in st["questions"]:
         if not q.get("answered") and q["text"] not in text:
             gaps.append("question: " + q["text"][:40])
+    for sb in open_stubs(st):
+        if f"- stubbed: {sb['id']} {sb['text']}" not in text:
+            gaps.append("stub " + sb["id"])
     return gaps
 
 
@@ -737,10 +839,13 @@ def cmd_status(args):
 def context_text(st, current_session=None):
     L = [f"Open scout: {st['question']} (scouting/{st['slug']}/)"]
     L.append(f"Branch: {st['branch'] or '(none)'}. Box: {box_line(st)}.")
-    if st.get("keep"):
-        L.append("Keep if: " + "; ".join(st["keep"]) + ".")
-    if st["kill"]:
-        L.append("Kill when: " + "; ".join(st["kill"]) + ".")
+    L += criteria_lines(st, "Keep if", "Kill when")
+    left = [(i, d) for i, d in enumerate(st["directions"], 1) if d.get("closed_at")]
+    if left:
+        L.append("Tried and left (do not reopen without new evidence):")
+        for i, d in left:
+            L.append(f"  {i}. {d['text']} — learned: {d.get('learned') or '(nothing recorded)'}"
+                     + (f" [{evidence_label(d)}]" if d.get("evidence") else ""))
     L.append(f"Current direction ({len(st['directions'])}): {cur_direction(st)['text']}")
     notes = cur_direction(st)["entries"][-5:]
     for e in notes:
@@ -752,6 +857,9 @@ def context_text(st, current_session=None):
     qs = [q for q in st["questions"] if not q["answered"]]
     if qs:
         L.append("Parked questions (raise only at a pivot, a close, or when asked): " + "; ".join(q["text"] for q in qs))
+    stubs = open_stubs(st)
+    if stubs:
+        L.append("Stubbed so far (re-read each against the question before any verdict): " + "; ".join(f"{sb['id']} {sb['text']}" for sb in stubs))
     L.append(f"Read scouting/{st['slug']}/log.md before continuing. Do not ask the operator mid-build; park questions with `scout question`.")
     if st["sessions"]:
         L.append("Raw transcripts, newest last (the trace beats notes for a successor):")
@@ -889,6 +997,15 @@ def cmd_recover(args):
         print()
     if not any_:
         print("(no transcripts recorded, or none readable)")
+    print()
+    print("## Open stubs")
+    print()
+    print("Re-read each against the question before choosing the verdict; a stub of the part under test makes it unanswered.")
+    print()
+    for sb in open_stubs(st):
+        print(f"- {sb['id']} {sb['text']} (direction {sb['direction']})")
+    if not open_stubs(st):
+        print("(none)")
     print()
     print("## Decisions already recorded")
     print()
@@ -1052,6 +1169,17 @@ def main(argv=None):
         s.add_argument("--scout")
         s.set_defaults(fn=fn)
 
+    s = sub.add_parser("stub", help="record a fake as it is made: what was stubbed, mocked or hard-coded")
+    s.add_argument("text", help="'-' reads stdin")
+    s.add_argument("--scout")
+    s.set_defaults(fn=cmd_stub)
+
+    s = sub.add_parser("unstub", help="mark stub S<n> replaced by the real thing")
+    s.add_argument("id")
+    s.add_argument("evidence", help="pointer to the real thing: file:line, commit, the command and its output; '-' reads stdin")
+    s.add_argument("--scout")
+    s.set_defaults(fn=cmd_unstub)
+
     s = sub.add_parser("answer", help="answer parked question #N")
     s.add_argument("index", type=int)
     s.add_argument("text")
@@ -1077,6 +1205,7 @@ def main(argv=None):
     s = sub.add_parser("pivot", help="close the current direction, open the next")
     s.add_argument("direction")
     s.add_argument("--learned", help="what the closed direction taught; '-' reads stdin")
+    s.add_argument("--evidence", help="pointer to the observation that ended the direction; '-' reads stdin")
     s.add_argument("--supersedes", type=lambda v: [x.strip() for x in v.split(",") if x.strip()], help="D1,D2")
     s.add_argument("--scout")
     s.set_defaults(fn=cmd_pivot)
@@ -1085,10 +1214,14 @@ def main(argv=None):
     s.add_argument("--outcome", choices=["kill", "commit"], required=True, help="what happens to the work")
     s.add_argument("--verdict", choices=["proven", "disproven", "conditional", "unanswered"], help="what happened to the question")
     s.add_argument("--verdict-note", help="for conditional: the thing held fixed; for disproven: why the wall is structural; '-' reads stdin")
+    s.add_argument("--repro", help="command, run from the scout branch, and what to look at; required for disproven")
+    s.add_argument("--blast-radius", help="conditional only, and required there: what depends on the constraint held fixed")
+    s.add_argument("--fired", action="append", metavar="K1|P2", help="a kill (K) or keep (P) criterion that fired (repeatable)")
     s.add_argument("--unknown", action="append", help="what this scout did not settle (repeatable)")
     s.add_argument("--tried")
     s.add_argument("--learned", help="'-' reads stdin")
     s.add_argument("--thrown-away")
+    s.add_argument("--evidence", help="pointer to the observation that ended the last direction; '-' reads stdin")
     s.add_argument("--scout")
     s.set_defaults(fn=cmd_close)
 

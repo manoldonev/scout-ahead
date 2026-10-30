@@ -12,19 +12,25 @@ again.
 <!-- scout-ahead handoff v1; plain markdown, fixed headings; written <timestamp> -->
 
 ## Question
-## Status               status, directions, box, keep/kill criteria, verdict on the question, learned
+## Status               status, directions, box, keep/kill criteria and which fired, verdict on the question, blast radius, learned
 ## Decisions            table: id | decision | settled by | evidence | superseded by
 ## Open questions       bullets: open decisions (D-ids, with the question to ask) and parked questions
-## Pointers             bullets: branch, base, head, directions, variant arms, transcripts, log, decisions
+## Pointers             bullets: branch, base, head, directions (with what each taught), variant arms, transcripts, log, decisions
+## Reproducing          present only when the close gave a repro: the command, run from the scout branch, and what to look at
 ## Pre-registration     present only when a question became measurable
 ## Thrown away
-## Still unknown        what the scout did not settle
+## Still unknown        what the scout did not settle, and the stubs still open
 ```
 
 The version marker in the HTML comment lets a reader detect the shape without parsing.
 
 ## Fields
 
+- **Status.** Kill criteria are numbered K1.., keep criteria P1... After a close, each is
+  marked `fired` or `did not fire`, or the line `Criteria: none fired.` says none did. The
+  script refuses a verdict without its evidence: `proven` needs a `code, proved` decision,
+  `disproven` a note and a repro, `conditional` a note and a blast radius (what depends on the
+  constraint held fixed). The box line is what the scout spent, not an estimate.
 - **Decisions.** `settled by` is one of `operator`, `code, proved`, `code, inferred`, `open`. The file states the mapping onto ledger-style vocabularies itself (`user-answered`, `codebase-derived`, `deferred`; why-log's testimony / stated / inferred), so a reader with a closed provenance enum needs no plugin knowledge. An `operator` row always carries a transcript pointer or a quote the script found verbatim in a
   recorded operator turn (compaction summaries excluded), and only another operator decision
   supersedes it. `code, proved` means the check was seen to fail with the mechanism reverted,
@@ -39,12 +45,17 @@ The version marker in the HTML comment lets a reader detect the shape without pa
   raw session traces (`~/.claude/projects/…/<session>.jsonl`), which beat structured notes
   for a successor. The generator marks a branch `(missing)`, `(no commits past base)` or
   `(not pushed)`, and a transcript `(local to this machine)` or `(missing)`, so a reader knows
-  which pointers it can follow.
+  which pointers it can follow. Each closed direction carries what it taught and the
+  observation that turned it (`— learned: …; turned on: …`).
+- **Reproducing.** The command that shows the result, run from the scout branch, and what to
+  look at in its output. Required for a `disproven` verdict.
 - **Pre-registration.** `question`, `arms`, `runs`, `pass rule`, `cost bound`, and when it
   was registered. It is written before any scored run; a scored track runs it as given. An
   A/B harness such as [agent-ab](https://github.com/h-a-forster/agent-ab) is the natural consumer.
 - **Still unknown.** The conditions never exercised, the parts stubbed, the scale untested; it
-  bounds the scout's authority so a narrow result is not read as a general one.
+  bounds the scout's authority so a narrow result is not read as a general one. Every stub
+  recorded with `scout stub` and not yet replaced appears as `- stubbed: S<n> …`; the cover
+  check refuses a handoff that drops one.
 - **Thrown away.** What is discarded and why, so nobody reopens it by accident.
 
 ## How a spec-driven tool reads it
@@ -61,8 +72,12 @@ The version marker in the HTML comment lets a reader detect the shape without pa
   before the run starts, and the cost bound caps it.
 - **Pointers** replace copying: the downstream tool links the branch and commits rather
   than pasting diffs.
+- **The scout branch is evidence**: it is re-run and cited, never merged. A `commit` outcome
+  authorizes a rebuild of what it proved under the receiving track's own rules.
+- **The box** is what the scout spent without tests, error handling or edge cases. It is not
+  an estimate for the real build.
 
-The generator refuses to write a handoff that drops a decision id, a direction, a branch or an
-open question from the record (a cover check), or that points at a scout branch that no longer
+The generator refuses to write a handoff that drops a decision id, a direction, a branch, an
+open stub or an open question from the record (a cover check), or that points at a scout branch that no longer
 exists. A tool that reads only the Decisions table and the Open questions list has what it
 needs.

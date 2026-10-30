@@ -41,7 +41,14 @@ common path.
    not after. The close gives the question a verdict, `proven`, `disproven`, `conditional` or
    `unanswered`, and lists what is still unknown, because a scout that names what it did not
    settle bounds its own authority. Most honest disproofs are conditional: name the thing held
-   fixed.
+   fixed. The script refuses a verdict without the evidence its kind needs: `proven` an
+   observed (`code, proved`) decision, `disproven` the wall and a repro, `conditional` the
+   constraint and its blast radius. The close records which criteria fired, as written; a
+   criterion is never widened after the fact. A `commit` carries the branch forward as
+   evidence, never as code to merge.
+4b. **Every fake is recorded when it is made** (`scout stub`), survives pivots and compaction,
+   and is re-read against the question before the verdict. A stub of the part under test makes
+   the verdict `unanswered`; blocked on access is a parked question, not a mock.
 5. **Pre-registration only once a question is measurable**, and then before the scored run:
    arms, runs, pass rule, cost bound. The handoff carries it; the plugin never invents one.
 6. **Two to four variants at most**, each in its own worktree and branch, each its own
@@ -63,9 +70,11 @@ common path.
 
 The `SessionStart` hook runs on `startup`, `resume`, `compact` and `clear`. It writes the
 session id and transcript path to `scouting/.session.json` (gitignored), appends them to the
-open scout's `sessions[]`, and emits the open scout's question, current direction, last
-notes, decisions in force, parked questions and transcript paths as additional context. On
-`compact` it says so, because automatic compaction keeps only a fraction of side constraints.
+open scout's `sessions[]`, and emits the open scout's question, the directions already
+tried and left (each with what it taught and the observation that turned it), current
+direction, last notes, decisions in force, parked questions, open stubs and transcript paths
+as additional context. On `compact` it says so, because automatic compaction keeps only a
+fraction of side constraints.
 
 ## What the model does and what the script does
 

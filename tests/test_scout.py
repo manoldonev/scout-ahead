@@ -71,7 +71,7 @@ class ScoutRepo(unittest.TestCase):
         self.assertIn("question parked: is the cache shared?", log)
         self.assertIn("D1", (self.repo / "scouting" / slug / "decisions.md").read_text())
 
-        out = self.scout("pivot", "bypass the cache", "--learned", "cache is per-process", "--supersedes", "D1").stdout
+        out = self.scout("pivot", "bypass the cache", "--learned", "cache is per-process", "--evidence", "bench.txt:3", "--supersedes", "D1").stdout
         self.assertIn("direction 2 open", out)
         self.assertIn("boundary reached", out)
         st = self.state(slug)
@@ -96,6 +96,9 @@ class ScoutRepo(unittest.TestCase):
         self.assertIn(f"| D2 | ship the bypass | operator | {tp} @ {self.base[:12]} |", out)
         self.assertIn(f"| D1 | use the existing cache | code, inferred | a.txt:1 @ {self.base[:12]} | direction 2 |", out)
         self.assertIn("- D3: cache eviction policy", out)
+        self.assertIn("— learned: cache is per-process; turned on: bench.txt:3", out)
+        self.assertIn(f"- `scout/{slug}` is evidence: re-run it, cite it, never merge it; what it proved is rebuilt under the receiving track's own rules.", out)
+        self.assertIn("The box is what the scout spent, without tests, error handling or edge cases; it is not an estimate for the real build.", out)
         self.assertIn(f"- base: `{self.base}`", out)
         self.assertIn("p50 under 10ms", out)
         self.assertIn("cache branch", out)
@@ -115,7 +118,7 @@ class ScoutRepo(unittest.TestCase):
         keep criteria; verdict and unknowns at close; handoff refuses to drop anything."""
         self.scout("start", "q rules", "--no-branch", "--keep", "p50 under 10ms", "--kill", "no path without isinstance")
         log = (self.repo / "scouting" / "q-rules" / "log.md").read_text()
-        self.assertIn("Keep if: p50 under 10ms.", log)
+        self.assertIn("Keep if: P1 p50 under 10ms.", log)
         r = self.scout("decide", "use X", "--by", "operator", check=False)
         self.assertEqual(r.returncode, 2)
         self.assertIn("needs --evidence", r.stderr)
@@ -138,6 +141,7 @@ class ScoutRepo(unittest.TestCase):
         self.assertIn("- superseded by: D2", dec)
         self.assertIn("- question to ask: LRU or TTL?", dec)
         self.scout("close", "--outcome", "kill", "--verdict", "conditional", "--verdict-note", "only if the cache is per process",
+                   "--blast-radius", "every caller that assumes a shared cache",
                    "--unknown", "behaviour under concurrency", "--unknown", "cold start")
         log = (self.repo / "scouting" / "q-rules" / "log.md").read_text()
         self.assertIn("Verdict on the question: CONDITIONAL — only if the cache is per process", log)
@@ -147,7 +151,9 @@ class ScoutRepo(unittest.TestCase):
         self.assertIn("- D3: eviction policy — ask: LRU or TTL?", out)
         self.assertIn("## Still unknown", out)
         self.assertIn("- behaviour under concurrency", out)
-        self.assertIn("Keep criteria: p50 under 10ms.", out)
+        self.assertIn("Keep criteria: P1 p50 under 10ms.", out)
+        self.assertIn("Criteria: none fired.", out)
+        self.assertIn("Blast radius: every caller that assumes a shared cache", out)
 
     def test_handoff_cover_check(self):
         self.scout("start", "q cover", "--no-branch")
@@ -168,6 +174,63 @@ class ScoutRepo(unittest.TestCase):
         self.assertIn("handoff would drop: question: unrendered?", r.stderr)
         r = sp.run([sys.executable, str(broken), "handoff", "--no-check"], cwd=self.repo, text=True, capture_output=True)
         self.assertEqual(r.returncode, 0)
+
+    def test_verdict_requires_evidence(self):
+        self.scout("start", "q verdict", "--no-branch", "--kill", "no path found", "--kill", "p50 over 50ms", "--keep", "one call site")
+        refusals = [
+            (["--verdict", "proven"], "needs at least one observed decision"),
+            (["--verdict", "disproven", "--verdict-note", "the API has no hook"], "needs --verdict-note"),
+            (["--verdict", "conditional", "--verdict-note", "only with one region"], "--blast-radius"),
+            (["--verdict", "disproven", "--verdict-note", "no hook", "--repro", "make probe", "--blast-radius", "x"], "conditional verdict only"),
+            (["--verdict", "unanswered", "--fired", "K9"], "no criterion K9"),
+        ]
+        self.scout("decide", "use the cache", "--by", "code", "--evidence", "a.txt:1")
+        for extra, msg in refusals:
+            r = self.scout("close", "--outcome", "kill", *extra, check=False)
+            self.assertEqual(r.returncode, 2, extra)
+            self.assertIn(msg, r.stderr)
+            self.assertEqual(self.state("q-verdict")["status"], "open", "a refused close mutates nothing")
+        self.scout("decide", "the cache holds", "--by", "code", "--proof", "proved", "--evidence", "x")
+        self.scout("close", "--outcome", "commit", "--verdict", "proven", "--fired", "K1")
+        out = self.scout("handoff", "--print").stdout
+        self.assertIn("K1 no path found: fired", out)
+        self.assertIn("K2 p50 over 50ms: did not fire", out)
+        self.assertIn("P1 one call site: did not fire", out)
+        self.assertNotIn("## Reproducing", out)
+
+        self.scout("start", "q wall", "--no-branch")
+        self.scout("close", "--outcome", "kill", "--verdict", "disproven", "--verdict-note", "the API has no hook",
+                   "--repro", "python3 probe.py; look for 'no hook' on line 2")
+        out = self.scout("handoff", "--print").stdout
+        self.assertIn("## Reproducing\n\npython3 probe.py; look for 'no hook' on line 2\n", out)
+        self.assertLess(out.index("## Pointers"), out.index("## Reproducing"))
+
+    def test_stubs_survive_pivot(self):
+        env = dict(os.environ, CLAUDE_PLUGIN_ROOT=str(PLUGIN))
+        self.scout("start", "q stubs", "--no-branch")
+        self.assertIn("S1 recorded", self.scout("stub", "payment API answers from a fixture").stdout)
+        self.scout("pivot", "second direction", "--learned", "x")
+        payload = json.dumps({"session_id": "s1", "transcript_path": "/nowhere/s1.jsonl", "cwd": str(self.repo), "source": "compact"})
+        ctx = json.loads(sh(["bash", str(HOOK)], self.repo, stdin=payload, env=env).stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("Stubbed so far (re-read each against the question before any verdict): S1 payment API answers from a fixture", ctx)
+        out = self.scout("handoff", "--print").stdout
+        self.assertIn("## Still unknown\n\n- stubbed: S1 payment API answers from a fixture\n", out)
+        self.assertIn("- S1 payment API answers from a fixture", self.scout("recover").stdout.split("## Open stubs")[1])
+        self.assertIn("## Stubbed", (self.repo / "scouting" / "q-stubs" / "log.md").read_text())
+
+        self.assertEqual(self.scout("unstub", "S9", "x", check=False).returncode, 2)
+        self.scout("unstub", "S1", "pay.py:40 calls the sandbox")
+        self.assertEqual(self.scout("unstub", "S1", "again", check=False).returncode, 2)
+        out = self.scout("handoff", "--print").stdout
+        self.assertNotIn("stubbed: S1", out.split("## Still unknown")[1])
+        self.assertIn("→ unstubbed", (self.repo / "scouting" / "q-stubs" / "log.md").read_text())
+
+        self.assertIn("S2 recorded", self.scout("stub", "auth is hard-coded").stdout)
+        script = SCRIPT.read_text().replace('L.append(f"- stubbed: {sb[\'id\']} {sb[\'text\']}")', 'pass')
+        broken = self.repo / "broken.py"; broken.write_text(script)
+        r = subprocess.run([sys.executable, str(broken), "handoff"], cwd=self.repo, text=True, capture_output=True)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("handoff would drop: stub S2", r.stderr)
 
     def test_operator_quote_verified(self):
         self.scout("start", "q quote", "--no-branch")
@@ -282,11 +345,19 @@ class ScoutRepo(unittest.TestCase):
         self.assertIn("first thread", ctx)
         self.assertIn("D1 render md from state [code, inferred]", ctx)
         self.assertIn("is the window configurable?", ctx)
-        self.assertIn("Kill when: no injection in two runs", ctx)
+        self.assertIn("Kill when: K1 no injection in two runs", ctx)
+        self.assertNotIn("Tried and left", ctx)
         self.assertIn("/nowhere/s1.jsonl", ctx, "successor gets the previous session's raw transcript path")
         self.assertIn("/nowhere/s2.jsonl (this session)", ctx)
         st = self.state("does-it-survive-compaction")
         self.assertEqual([s["session_id"] for s in st["sessions"]], ["s1", "s2"])
+
+        self.scout("pivot", "inject from a file", "--learned", "the window is fixed at 8k", "--evidence", "probe.log:12")
+        payload = json.dumps({"session_id": "s3", "transcript_path": "/nowhere/s3.jsonl", "cwd": str(self.repo), "source": "compact", "hook_event_name": "SessionStart"})
+        ctx = json.loads(sh(["bash", str(HOOK)], self.repo, stdin=payload, env=env).stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("Tried and left (do not reopen without new evidence):", ctx)
+        self.assertIn("1. Does it survive compaction? — learned: the window is fixed at 8k [probe.log:12]", ctx)
+        self.assertIn("Current direction (2): inject from a file", ctx)
 
         r = sh(["bash", str(HOOK)], self.repo, stdin="not json", env=env)
         self.assertEqual(r.returncode, 0)
