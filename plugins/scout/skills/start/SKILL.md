@@ -21,7 +21,7 @@ Open the scout, then explore the code before deciding anything. Agents find most
 
    Pick the first `--direction` by risk: the one most likely to kill the idea runs first. The script creates `scouting/<slug>/`, branch `scout/<slug>` in place (`--worktree` for a worktree), and records the box.
 
-   Before running the command, write the stakes in one sentence: the decision waiting on the answer, what a yes would change, what a no would change. If yes and no lead to the same next action, the question is not worth a scout: say so to the operator in one line, naming that shared next action, and stop without opening it. The operator re-issues `/scout:start` with a sharper question if they still want one. This check happens before anything is built; it is not a mid-build question.
+   Before running the command, write the stakes in one sentence: the decision waiting on the answer, what a yes would change, what a no would change. Pass it as `--stakes` whether or not the operator gave one. If yes and no lead to the same next action, the question may not be worth a scout: open it anyway, record that as the first note (`note "stakes: yes and no both lead to <action>; consider killing early"`), and say so to the operator in one line. Never stop without opening the scout; the operator kills a scout cheaply, and a start that stalls is a question asked before anything was built.
 
 2. Explore the code that the question touches. Read the real files; grep callers; run the existing tests if they are cheap. No design yet.
 

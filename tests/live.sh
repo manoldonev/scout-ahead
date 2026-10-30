@@ -18,7 +18,7 @@ echo "def add(a, b): return a + b" > calc.py && git add calc.py && git commit -q
 SID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
 fail=0
 ok()   { echo "  ok   $1"; }
-bad()  { echo "  FAIL $1"; fail=1; }
+bad()  { echo "  FAIL $1"; fail=1; echo "       last reply: $(tail -c 600 "$WORK/.last-result" | tr '\n' ' ')"; }
 check(){ if eval "$2"; then ok "$1"; else bad "$1"; fi; }
 
 run() { # run <label> <prompt> [extra flags]
@@ -74,6 +74,10 @@ check "direction 2 open" 'grep -q "## Direction 2:" "scouting/$SLUG/log.md"'
 check "direction 1 closed with a learned line" 'grep -q "closed by pivot. Learned:" "scouting/$SLUG/log.md"'
 
 run close "/scout:close kill" --resume "$SID"
+if ! grep -q '"status": "closed"' "scouting/$SLUG/state.json"; then
+  # the close is a boundary: the skill raises parked questions and waits, so the operator answers once
+  run close-answer "Finite float range is enough; overflow is a domain edge, not a kill. Answer the parked questions that way and close now as kill." --resume "$SID"
+fi
 check "scout closed" 'grep -q "\"status\": \"closed\"" "scouting/$SLUG/state.json"'
 check "close wrote learned" 'grep -q "^Learned: ." "scouting/$SLUG/log.md"'
 check ".current cleared" '[ ! -f scouting/.current ]'
