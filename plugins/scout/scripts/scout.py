@@ -447,19 +447,32 @@ def cmd_answer(args):
 def cmd_decide(args):
     root = scouts_root(args)
     st = load(root, current_slug(root, args.scout))
+    if args.by == "operator" and not args.evidence:
+        die("an operator decision needs --evidence: the operator's words, quoted, or a transcript pointer; without one record it --by open")
+    if args.proof and args.by != "code":
+        die("--proof applies to --by code only")
+    new_id = f"D{len(st['decisions']) + 1}"
+    for sid in args.supersedes or []:
+        hit = [x for x in st["decisions"] if x["id"] == sid]
+        if not hit:
+            die(f"no decision {sid}")
+        hit[0]["superseded_by"] = new_id
     d = {
-        "id": f"D{len(st['decisions']) + 1}",
+        "id": new_id,
         "text": args.text,
         "by": args.by,
+        "proof": (args.proof or "inferred") if args.by == "code" else None,
         "evidence": args.evidence,
+        "ask": args.ask if args.by == "open" else None,
+        "supersedes": args.supersedes or [],
         "direction": len(st["directions"]),
         "at": now(),
         "superseded_by": None,
     }
     st["decisions"].append(d)
-    _entry(st, f"decision {d['id']} ({args.by})", args.text)
+    _entry(st, f"decision {d['id']} ({by_label(d)})", args.text)
     save(root, st)
-    print(f"{d['id']} recorded, settled by {args.by}")
+    print(f"{d['id']} recorded, settled by {by_label(d)}" + (f"; supersedes {', '.join(d['supersedes'])}" if d["supersedes"] else ""))
 
 
 def cmd_spent(args):
@@ -610,6 +623,8 @@ def cmd_status(args):
 def context_text(st, current_session=None):
     L = [f"Open scout: {st['question']} (scouting/{st['slug']}/)"]
     L.append(f"Branch: {st['branch'] or '(none)'}. Box: {box_line(st)}.")
+    if st.get("keep"):
+        L.append("Keep if: " + "; ".join(st["keep"]) + ".")
     if st["kill"]:
         L.append("Kill when: " + "; ".join(st["kill"]) + ".")
     L.append(f"Current direction ({len(st['directions'])}): {cur_direction(st)['text']}")
