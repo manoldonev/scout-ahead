@@ -44,6 +44,17 @@ check "code explored before deciding (a code: note exists)" 'grep -q "note: code
 check "no decision at start" '[ "$(python3 -c "import json;print(len(json.load(open(\"spikes/$SLUG/state.json\"))[\"decisions\"]))")" = 0 ]'
 check "hook recorded the session transcript" 'grep -q "\"session_id\": \"$SID\"" "spikes/$SLUG/state.json"'
 
+run note "/spike:note operator: floats must round-trip through json, so the answer has to survive json.dumps" --resume "$SID"
+check "note appended verbatim" 'grep -q "note: operator: floats must round-trip through json" "spikes/$SLUG/log.md"'
+
+run spike "/spike:spike I keep going back and forth: is a type check really worse than silent coercion here? Give me your read, with evidence from calc.py." --resume "$SID"
+check "conversation answered in prose" '[ "$(wc -w < "$WORK/.last-result")" -gt 40 ]'
+check "no option dialog in conversation mode" '! grep -qiE "option [ab]\)|^\s*[0-9]\. \*\*(Option|Choice)" "$WORK/.last-result"'
+check "no decision recorded without 'record this'" '[ "$(python3 -c "import json;print(len(json.load(open(\"spikes/$SLUG/state.json\"))[\"decisions\"]))")" = 0 ]'
+
+run status "/spike:status" --resume "$SID"
+check "status names the spike" 'grep -q "$SLUG" "$WORK/.last-result"'
+
 VCAP="${SPIKE_TEST_ARM_USD:-0.35}"
 run variants "/spike:variants 2 'Can add() stay total over floats and ints without a type check? Answer in VARIANT.md only, no code.' --usd $VCAP --model $MODEL" --resume "$SID"
 check "two arms recorded" '[ "$(python3 -c "import json;print(len(json.load(open(\"spikes/$SLUG/state.json\"))[\"variants\"][0][\"arms\"]))")" = 2 ]'
