@@ -45,10 +45,11 @@ else: no tracker, no pipeline, no project layout.
 | `/scout:think` | conversation mode: think out loud, get prose and evidence back; a decision is recorded only when you say "record this" |
 | `/scout:note <text>` | append to the log |
 | `stub <text>` / `unstub S<n> <pointer>` (script commands, run from `/scout:think`) | record a fake (a mock, a fixture, a hard-coded value) when it is made, and mark it replaced with a pointer to the real thing; open stubs survive compaction, are re-read before the verdict, and are listed under Still unknown |
-| `/scout:variants <n> [question]` | 2 to 4 arms of one question in separate worktrees, each a capped `claude -p` on Opus, compared as evidence |
+| `/scout:variants <n> [question] --arm "…" --criterion "…" [--check "<cmd>"]` | 2 to 4 arms of one question in separate worktrees, each a capped `claude -p` on Opus told only its own approach; the criteria are stored before launch, the harness runs each `--check` in every arm and surfaces denied tool calls; compared as evidence |
 | `/scout:pivot <new direction>` | close the current direction with what it taught, mark superseded decisions, open the next; the common path |
 | `/scout:close kill\|commit` | recover decisions from the diff and the transcript, tag each operator / code (proved or inferred) / open, give the question a verdict (proven / disproven / conditional / unanswered), write tried / learned / thrown away / still unknown |
-| `/scout:handoff` | write `handoff.md`: decisions with provenance, open questions, pointers, pre-registration when a question became measurable |
+| `/scout:handoff` | write `handoff.md`: decisions with provenance, open questions, pointers, pre-registration when a question became measurable; then a fresh, capped, read-only agent cold-reads it (`coldread`) and you get only the questions that are the operator's to answer |
+| `prereg --floor "…"` / `prereg-status R<n> passed\|failed\|dropped --evidence <pointer>` (script commands, run from `/scout:variants` or `/scout:handoff`) | pre-register a measurable question before its scored run, with what a do-nothing arm scores; registrations are append-only and only their status changes later |
 | `/scout:status` | scouts, directions, boxes spent, open decisions |
 
 ## Artifacts
@@ -59,7 +60,8 @@ else: no tracker, no pipeline, no project layout.
 - `decisions.md` — each decision with who settled it, the evidence pointer, and a supersession marker
 - `handoff.md` — the downstream artifact (`docs/handoff-format.md`)
 - `state.json` — the machine view `log.md` and `decisions.md` are rendered from on every command, and `handoff.md` on `/scout:handoff`; the rendered files carry a banner saying so, because a hand edit is overwritten by the next command
-- `variants/run-<n>/v<i>/` — each arm's result, output and diff stat
+- `variants/run-<n>/v<i>/` — each arm's prompt, result, output, diff stat, check outputs (`check-<k>.txt`) and denied tool calls (`denials.txt`)
+- `coldread.md` — the questions a fresh agent could not answer from `handoff.md`
 
 Pointers, not copies: branches, commits, file:line, transcript paths.
 

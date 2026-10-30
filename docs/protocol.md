@@ -57,19 +57,33 @@ common path.
    and is re-read against the question before the verdict. A stub of the part under test makes
    the verdict `unanswered`; blocked on access is a parked question, not a mock.
 5. **Pre-registration only once a question is measurable**, and then before the scored run:
-   arms, runs, pass rule, cost bound. The handoff carries it; the plugin never invents one.
+   arms, runs, pass rule (with the runs discarded as warmup and the spread tolerated), the
+   floor (what an arm that changed nothing scores, and why that fails the rule, so the test
+   can fail), cost bound. Registrations are append-only: a second one is P2, never a rewrite
+   of P1, and only a registration's status changes later (`prereg-status`: passed, failed or
+   dropped, with a pointer to the run). The handoff carries every one; the plugin never
+   invents one.
 6. **Two to four variants at most**, each in its own worktree and branch, each its own
    `claude -p` process with its own `--max-budget-usd`, compared as evidence. The prompt
    forbids leaving the worktree; the worktrees are siblings, so no arm sees another's draft.
-   The arms differ on one axis, the criteria are written before the race and judged on
-   behavior, no hybrid is cherry-picked, and nothing is deleted before the operator has seen
-   the comparison.
+   The arms differ on one axis: each is told its own position on it (`--arm`), one of them the
+   codebase's existing pattern, and none is told another's. The criteria are stored in the run
+   record before any arm spawns, and `variants` refuses a run without them. An acceptance
+   command (`--check`) is written once, the arms are told they will be judged by it, and the
+   harness runs it in every arm's worktree after the arm finishes; an arm's own report is a
+   claim. A tool call an arm was denied is surfaced, not read as a weak arm. Arms are judged
+   on behavior, no hybrid is cherry-picked, and nothing is deleted before the operator has
+   seen the comparison.
 7. **Every spawn has a dollar cap**, enforced by the CLI between turns. The scout's own box is
    metered from spawn costs plus what the operator logs (`scout spent`); the interactive
    session's own bill is not visible to the plugin and is not claimed. A breached box rings as
    a `BOX:` line naming the clock (dollars metered, hours logged, or hours on the calendar) on
    the commands used mid-build, under the scout in `status`, and first in the session-start
-   payload. `variants` refuses a run whose arms' caps would exceed the dollars left.
+   payload. `variants` and `coldread` refuse a run whose caps would exceed the dollars left.
+   Before a handoff ships, one capped, read-only agent that cannot talk to the author reads
+   it (`coldread`) and lists only the questions where a wrong guess would change the plan;
+   the author sorts them into answered by the record, the scout's minor call, or the
+   operator's, in one round.
 8. **No dependence** on agent teams running headless, on credential pass-through, or on a
    long-lived session surviving compaction without the hook. Opus by default for anything the
    plugin spawns.

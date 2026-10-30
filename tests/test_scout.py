@@ -1,6 +1,7 @@
 """Offline tests for scripts/scout.py: every command against a throwaway git repo."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -54,6 +55,23 @@ class ScoutRepo(unittest.TestCase):
     def state(self, slug):
         return json.loads((self.repo / "scouting" / slug / "state.json").read_text())
 
+    def stub_claude(self):
+        """A `claude` on PATH that records argv and the stdin prompt in its cwd, writes a file there and prints a result json."""
+        bindir = self.repo.parent / f"{self.repo.name}-bin"
+        bindir.mkdir(exist_ok=True)
+        stub = bindir / "claude"
+        stub.write_text("""#!/usr/bin/env bash
+printf '%s\\n' "$@" > argv.txt
+cat > prompt.txt
+mkdir -p .claude && echo x > .claude/settings.local.json
+echo "built by $(basename "$PWD")" > VARIANT.md
+echo built > out.txt
+printf '{"type":"result","subtype":"success","total_cost_usd":0.25,"num_turns":3,"session_id":"stub","result":"done","permission_denials":[{"tool_name":"Bash"}]}'
+""")
+        stub.chmod(0o755)
+        self.addCleanup(shutil.rmtree, bindir, ignore_errors=True)
+        return dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}")
+
     def test_full_loop(self):
         out = self.scout("start", "Can the thing be done cheaply?", "--hours", "2", "--usd", "5", "--kill", "no path found").stdout
         self.assertIn("can-the-thing-be-done-cheaply", out)
@@ -90,7 +108,7 @@ class ScoutRepo(unittest.TestCase):
         self.assertEqual(self.scout("close", "--outcome", "kill", check=False).returncode, 2)
 
         self.scout("prereg", "--question", "bypass vs cache latency", "--arms", "bypass, cache", "--runs", "5",
-                   "--pass-rule", "p50 under 10ms in 4 of 5", "--cost-usd", "3")
+                   "--pass-rule", "p50 under 10ms in 4 of 5", "--floor", "the cache arm unchanged scores p50 40ms, which fails", "--cost-usd", "3")
         out = self.scout("handoff", "--print").stdout
         for heading in ["## Question", "## Status", "## Decisions", "## Open questions", "## Pointers", "## Pre-registration", "## Thrown away"]:
             self.assertIn(heading, out)
@@ -339,7 +357,7 @@ class ScoutRepo(unittest.TestCase):
 
     def test_variants_refused_past_box(self):
         self.scout("start", "q var box", "--usd", "1")
-        r = self.scout("variants", "2", "--usd", "1", "--dry-run", check=False)
+        r = self.scout("variants", "2", "--usd", "1", "--criterion", "c1", "--dry-run", check=False)
         self.assertEqual(r.returncode, 2)
         self.assertIn("run would exceed the box: $1.00 left; fewer arms, a lower --usd, or pivot/close", r.stderr)
         self.assertEqual(self.state("q-var-box")["variants"], [])
@@ -471,69 +489,139 @@ class ScoutRepo(unittest.TestCase):
 
     def test_variants_dry_run_and_bounds(self):
         self.scout("start", "q var", "--no-branch")
-        r = self.scout("variants", "5", "--dry-run", check=False)
+        r = self.scout("variants", "5", "--criterion", "c1", "--dry-run", check=False)
         self.assertEqual(r.returncode, 2)
         self.assertIn("2..4", r.stderr)
         (self.repo / "dirty.txt").write_text("x")
-        r = self.scout("variants", "2", "--dry-run", check=False)
+        r = self.scout("variants", "2", "--criterion", "c1", "--dry-run", check=False)
         self.assertEqual(r.returncode, 2)
         self.assertIn("dirty", r.stderr)
         (self.repo / "dirty.txt").unlink()
         sh(["git", "add", "-A"], self.repo)
         sh(["git", "commit", "-q", "-m", "scout state"], self.repo)
-        out = self.scout("variants", "3", "--dry-run", "--usd", "1.5").stdout
+        r = self.scout("variants", "2", "--dry-run", check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("criteria before launching", r.stderr)
+        r = self.scout("variants", "3", "--arm", "A", "--arm", "B", "--criterion", "c1", "--dry-run", check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("--arm given 2 times for 3 arms", r.stderr)
+        out = self.scout("variants", "3", "--dry-run", "--usd", "1.5", "--criterion", "p50 under 10ms").stdout
         self.assertEqual(out.count("would run arm"), 3)
         self.assertIn("cap $1.5", out)
+        self.assertIn("criteria (fixed before launch): p50 under 10ms", out)
 
     def test_variants_with_stub_claude(self):
         """Arms run as separate processes in separate worktrees; a stub `claude` proves the plumbing.
         The scout itself is on a branch, so the arm branches must not nest under it."""
-        bindir = self.repo.parent / f"{self.repo.name}-bin"
-        bindir.mkdir(exist_ok=True)
-        stub = bindir / "claude"
-        stub.write_text("""#!/usr/bin/env bash
-# stub: record argv and the stdin prompt, write a file in the worktree, print a result json
-printf '%s\\n' "$@" > argv.txt
-cat > prompt.txt
-mkdir -p .claude && echo x > .claude/settings.local.json
-echo "built by $(basename "$PWD")" > VARIANT.md
-echo built > out.txt
-printf '{"type":"result","subtype":"success","total_cost_usd":0.25,"num_turns":3,"session_id":"stub","result":"done"}'
-""")
-        stub.chmod(0o755)
+        env = self.stub_claude()
         self.scout("start", "q stub")
         sh(["git", "add", "-A"], self.repo)
         sh(["git", "commit", "-q", "-m", "scout state"], self.repo)
-        env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}")
-        r = subprocess.run([sys.executable, str(SCRIPT), "variants", "2", "--usd", "0.5", "--model", "opus"], cwd=self.repo, text=True, capture_output=True, env=env)
+        r = subprocess.run([sys.executable, str(SCRIPT), "variants", "2", "--usd", "0.5", "--model", "opus",
+                            "--arm", "A", "--arm", "B", "--criterion", "c1",
+                            "--check", "test -f out.txt", "--check", "test -f nope"],
+                           cwd=self.repo, text=True, capture_output=True, env=env)
         try:
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertIn("| v1 | scout/q-stub-run1-v1 | $0.25 | 3 | 4 | success |", r.stdout)
+            self.assertIn("| arm | approach | branch | cost | turns | files | status | c1 | c2 | denied |", r.stdout)
+            self.assertIn("| v1 | A | `scout/q-stub-run1-v1` | $0.25 | 3 | 4 | success | pass | fail | 1 |", r.stdout)
             st = self.state("q-stub")
             run = st["variants"][0]
+            self.assertEqual(run["criteria"], ["c1"])
             self.assertEqual(len(run["arms"]), 2)
             self.assertEqual(st["spent"]["usd"], 0.5)
-            for a in run["arms"]:
+            for a, approach in zip(run["arms"], ["A", "B"]):
+                self.assertEqual(a["approach"], approach)
                 self.assertTrue(a["commit"], "arm work is committed on its branch as a pointer")
+                self.assertEqual([c["exit"] == 0 for c in a["checks"]], [True, False])
+                self.assertEqual(a["denied"], 1)
                 vdir = self.repo / "scouting" / "q-stub" / "variants" / "run-1" / f"v{a['i']}"
                 self.assertIn(f"built by q-stub-run1-v{a['i']}", (vdir / "VARIANT.md").read_text())
                 self.assertEqual(json.loads((vdir / "result.json").read_text())["total_cost_usd"], 0.25)
+                self.assertIn("exit: 0", (vdir / "check-1.txt").read_text())
+                self.assertIn("exit: 1", (vdir / "check-2.txt").read_text())
+                self.assertIn("Bash", (vdir / "denials.txt").read_text())
                 argv_text = (Path(a["worktree"]) / "argv.txt").read_text()
                 argv = argv_text.split("\n")
                 self.assertEqual(argv[argv.index("--max-budget-usd") + 1], "0.5")
                 self.assertEqual(argv[argv.index("--model") + 1], "opus")
+                self.assertEqual(argv[argv.index("--permission-mode") + 1], "acceptEdits")
                 self.assertNotIn("You are arm", argv_text, "the prompt travels on stdin, never as a positional after a list flag")
-                self.assertIn("Do not read, list or search any other worktree", (Path(a["worktree"]) / "prompt.txt").read_text())
+                prompt = (Path(a["worktree"]) / "prompt.txt").read_text()
+                self.assertIn("Do not read, list or search any other worktree", prompt)
+                self.assertIn(f"Your approach: {approach}.", prompt)
+                self.assertNotIn(f"Your approach: {'B' if approach == 'A' else 'A'}", prompt, "no arm is told another's approach")
+                self.assertIn("You will be judged by: `test -f out.txt`; `test -f nope`.", prompt)
                 tracked = sh(["git", "ls-tree", "-r", "--name-only", "HEAD"], Path(a["worktree"])).stdout
                 self.assertNotIn(".claude/", tracked, "the CLI's own .claude/ dir stays out of the arm commit")
-            self.assertIn("## Variants", (self.repo / "scouting" / "q-stub" / "log.md").read_text())
-            self.assertIn("variant run 1 arm v2", self.scout("handoff", "--print").stdout)
+            log = (self.repo / "scouting" / "q-stub" / "log.md").read_text()
+            self.assertIn("## Variants", log)
+            self.assertIn("Criteria (fixed before launch): c1.", log)
+            self.assertIn("| v2 | B | `scout/q-stub-run1-v2` |", log)
+            self.assertIn("- variant run 1 arm v2 (B): `scout/q-stub-run1-v2`", self.scout("handoff", "--print").stdout)
         finally:
             for a in self.state("q-stub")["variants"][0]["arms"]:
                 sh(["git", "worktree", "remove", "--force", a["worktree"]], self.repo, check=False)
-            import shutil
-            shutil.rmtree(bindir, ignore_errors=True)
             shutil.rmtree(self.repo.parent / f"{self.repo.name}-scout-worktrees", ignore_errors=True)
+
+    def test_prereg_append_only(self):
+        self.scout("start", "q prereg", "--no-branch")
+        base = ["prereg", "--question", "lock vs none", "--arms", "lock, none", "--runs", "5", "--cost-usd", "0"]
+        r = self.scout(*base, "--pass-rule", "10 of 10 kept", check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("--floor", r.stderr)
+        self.assertIn("P1 pre-registered", self.scout(*base, "--pass-rule", "10 of 10 kept", "--floor", "no lock keeps 6 of 10").stdout)
+        self.assertIn("P2 pre-registered", self.scout(*base, "--pass-rule", "moved rule", "--floor", "f").stdout)
+        st = self.state("q-prereg")
+        self.assertEqual([(p["id"], p["pass_rule"]) for p in st["prereg"]], [("R1", "10 of 10 kept"), ("R2", "moved rule")])
+        self.scout("prereg-status", "R1", "failed", "--evidence", "x")
+        r = self.scout("prereg-status", "R1", "passed", "--evidence", "y", check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("R1 is already failed (x)", r.stderr)
+        self.assertEqual(self.scout("prereg-status", "P9", "dropped", "--evidence", "z", check=False).returncode, 2)
+        out = self.scout("handoff", "--print").stdout
+        p1 = out.split("### R1\n")[1].split("### R2\n")[0]
+        self.assertIn("- pass rule: 10 of 10 kept", p1)
+        self.assertIn("- floor: no lock keeps 6 of 10", p1)
+        self.assertIn("- status: failed (x)", p1)
+        self.assertIn("- status: open", out.split("### R2\n")[1])
+        self.assertIn("pre-registration R1 failed: x", (self.repo / "scouting" / "q-prereg" / "log.md").read_text())
+
+        st = self.state("q-prereg")
+        st["prereg"] = {"question": "old", "arms": "a, b", "runs": "1", "pass_rule": "r", "cost_usd": 0.0, "at": st["opened_at"]}
+        (self.repo / "scouting" / "q-prereg" / "state.json").write_text(json.dumps(st))
+        out = self.scout("handoff", "--print").stdout
+        self.assertIn("### R1\n\n- question: old", out, "an old single registration becomes R1")
+        self.assertIn("- status: open", out)
+
+        script = SCRIPT.read_text().replace('L.append(f"### {p[\'id\']}")', 'pass')
+        broken = self.repo / "broken.py"; broken.write_text(script)
+        r = subprocess.run([sys.executable, str(broken), "handoff"], cwd=self.repo, text=True, capture_output=True)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("handoff would drop: pre-registration R1", r.stderr)
+
+    def test_coldread_with_stub_claude(self):
+        env = self.stub_claude()
+        self.scout("start", "q cold", "--no-branch", "--usd", "2")
+        cold = lambda *a: subprocess.run([sys.executable, str(SCRIPT), "coldread", *a], cwd=self.repo, text=True, capture_output=True, env=env)
+        r = cold()
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("run `scout handoff` first", r.stderr)
+        self.scout("handoff")
+        r = cold()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("done", (self.repo / "scouting" / "q-cold" / "coldread.md").read_text())
+        self.assertEqual(self.state("q-cold")["spent"]["usd"], 0.25)
+        argv = (self.repo / "argv.txt").read_text().split("\n")
+        self.assertEqual(argv[argv.index("--max-budget-usd") + 1], "0.5")
+        self.assertEqual(argv[argv.index("--allowedTools") + 1], "Read,Grep,Glob")
+        self.assertNotIn("--permission-mode", argv, "the cold reader gets no edit permission")
+        prompt = (self.repo / "prompt.txt").read_text()
+        self.assertIn("Read scouting/q-cold/handoff.md.", prompt)
+        self.assertIn("cold read: scouting/q-cold/coldread.md, $0.25", (self.repo / "scouting" / "q-cold" / "log.md").read_text())
+        r = cold("--usd", "1.8")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("run would exceed the box: $1.75 left", r.stderr)
 
 
 if __name__ == "__main__":

@@ -60,6 +60,7 @@ check "status names the scout" 'grep -q "$SLUG" "$WORK/.last-result" || grep -qi
 
 VCAP="${SCOUT_TEST_ARM_USD:-0.35}"
 run variants "/scout:variants 2 'Can add() stay total over floats and ints without a type check? Answer in VARIANT.md only, no code.' --usd $VCAP --model $MODEL" --resume "$SID"
+check "criteria stored with the run" 'python3 -c "import json,sys;sys.exit(0 if json.load(open(\"scouting/$SLUG/state.json\"))[\"variants\"][0].get(\"criteria\") else 1)"'
 check "two arms recorded" '[ "$(python3 -c "import json;print(len(json.load(open(\"scouting/$SLUG/state.json\"))[\"variants\"][0][\"arms\"]))")" = 2 ]'
 check "arm results collected" '[ -f "scouting/$SLUG/variants/run-1/v1/result.json" ] && [ -f "scouting/$SLUG/variants/run-1/v2/result.json" ]'
 check "arms ran (a turn count > 0)" 'python3 -c "import json;d=json.load(open(\"scouting/$SLUG/variants/run-1/v1/result.json\"));import sys;sys.exit(0 if (d.get(\"num_turns\") or 0)>0 else 1)"'
@@ -82,6 +83,7 @@ check "handoff.md written" '[ -f "scouting/$SLUG/handoff.md" ]'
 for h in "## Question" "## Status" "## Decisions" "## Open questions" "## Pointers" "## Thrown away"; do
   check "handoff has '$h'" 'grep -q "^$h" "scouting/$SLUG/handoff.md"'
 done
+check "handoff cold-read before it ships" '[ -f "scouting/$SLUG/coldread.md" ]'
 check "handoff points at the transcript" 'grep -q "^- transcript: .*$SID.jsonl" "scouting/$SLUG/handoff.md"'
 check "no pre-registration invented" '! grep -q "## Pre-registration" "scouting/$SLUG/handoff.md" || grep -q "pre-registered" "scouting/$SLUG/log.md"'
 

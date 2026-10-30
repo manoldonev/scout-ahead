@@ -17,7 +17,7 @@ again.
 ## Open questions       bullets: open decisions (D-ids, with the question to ask) and parked questions (Q-ids, with what the build proceeded on)
 ## Pointers             bullets: branch, base, head, directions (with what each taught), variant arms, transcripts, log, decisions
 ## Reproducing          present only when the close gave a repro: the command, run from the scout branch, and what to look at
-## Pre-registration     present only when a question became measurable
+## Pre-registration     present only when a question became measurable: one `### R<n>` block per registration
 ## Thrown away
 ## Still unknown        what the scout did not settle, and the stubs still open
 ```
@@ -45,7 +45,8 @@ The version marker in the HTML comment lets a reader detect the shape without pa
   questions nobody answered at a boundary, as `Q<n>: <question> (proceeding on: <default>)`.
   The id never shifts; the default is what the build was done under, so an answer that
   differs from it means re-checking that work.
-- **Pointers.** Branch and commits resolve with `git rev-parse`; transcript paths are the
+- **Pointers.** Each variant arm line names the approach the arm was told to take (`sampled`
+  when the run named none). Branch and commits resolve with `git rev-parse`; transcript paths are the
   raw session traces (`~/.claude/projects/…/<session>.jsonl`), which beat structured notes
   for a successor. The generator marks a branch `(missing)`, `(no commits past base)` or
   `(not pushed)`, and a transcript `(local to this machine)` or `(missing)`, so a reader knows
@@ -53,8 +54,14 @@ The version marker in the HTML comment lets a reader detect the shape without pa
   observation that turned it (`— learned: …; turned on: …`).
 - **Reproducing.** The command that shows the result, run from the scout branch, and what to
   look at in its output. Required for a `disproven` verdict.
-- **Pre-registration.** `question`, `arms`, `runs`, `pass rule`, `cost bound`, and when it
-  was registered. It is written before any scored run; a scored track runs it as given. An
+- **Pre-registration.** One `### R<n>` block per registration, each with `question`, `arms`,
+  `runs`, `pass rule` (stating the runs discarded as warmup and the spread tolerated),
+  `floor` (what an arm that changed nothing scores, and why that fails the rule), `cost
+  bound`, when it was registered, and `status`: `open`, or `passed` / `failed` / `dropped`
+  followed by the pointer to the run in parentheses. Registrations are append-only; only the
+  status changes after one is written, and the cover check refuses a handoff that drops a
+  P-id. A registration from before floors existed reads `floor: (not recorded; …)`. It is
+  written before any scored run; a scored track runs it as given. An
   A/B harness such as [agent-ab](https://github.com/h-a-forster/agent-ab) is the natural consumer.
 - **Still unknown.** The conditions never exercised, the parts stubbed, the scale untested; it
   bounds the scout's authority so a narrow result is not read as a general one. Every stub
@@ -85,3 +92,8 @@ The generator refuses to write a handoff that drops a decision id, a direction, 
 open stub or an open question from the record (a cover check), or that points at a scout branch that no longer
 exists. A tool that reads only the Decisions table and the Open questions list has what it
 needs.
+
+Before it ships, `/scout:handoff` has a fresh, capped, read-only agent read the file cold
+(`scout coldread`), writing `coldread.md` beside it. That file is a pointer for the author,
+not a handoff section: its questions are folded back into the record and the handoff is
+regenerated.

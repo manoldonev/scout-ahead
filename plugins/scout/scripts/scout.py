@@ -92,10 +92,26 @@ def load(root, slug):
 
 
 def normalize(st):
-    """Upgrade older state shapes in place: questions parked before ids existed get Q1..Qn by position."""
+    """Upgrade older state shapes in place: questions parked before ids existed get Q1..Qn by position,
+    and a single pre-registration dict becomes R1 of a list."""
     for i, q in enumerate(st.get("questions", []), 1):
         q.setdefault("id", f"Q{i}")
+    p = st.get("prereg")
+    if isinstance(p, dict):
+        p.setdefault("id", "R1")
+        p.setdefault("floor", None)
+        p.setdefault("status", "open")
+        p.setdefault("status_evidence", None)
+        st["prereg"] = [p]
+    elif p is None:
+        st["prereg"] = []
     return st
+
+
+def parse_id(raw, prefix):
+    """`Q3`, `q3` or `3` → `Q3`; anything else is returned as given and fails the lookup."""
+    m = re.fullmatch(rf"[{prefix}{prefix.lower()}]?(\d+)", raw.strip())
+    return f"{prefix}{int(m.group(1))}" if m else raw
 
 
 def save(root, st):
@@ -228,6 +244,31 @@ def open_stubs(st):
     return [s for s in st.get("stubs", []) if not s.get("unstubbed")]
 
 
+def prereg_status_label(p):
+    return p["status"] + (f" ({p['status_evidence']})" if p.get("status_evidence") else "")
+
+
+def table_cell(text):
+    return str(text).replace("|", "\\|")
+
+
+def variant_run_lines(run):
+    """Criteria, checks and the arm table: shared by the log and the printed result so the two never differ."""
+    L = ["Criteria (fixed before launch): " + ("; ".join(run["criteria"]) + "." if run.get("criteria") else "(none recorded)")]
+    checks = run.get("checks") or []
+    if checks:
+        L.append("Checks (run by the harness in every arm): " + "; ".join(f"c{k} `{c}`" for k, c in enumerate(checks, 1)) + ".")
+    head = ["arm", "approach", "branch", "cost", "turns", "files", "status"] + [f"c{k}" for k in range(1, len(checks) + 1)] + ["denied"]
+    L += ["", "| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
+    for a in run["arms"]:
+        row = [f"v{a['i']}", table_cell(a.get("approach", "sampled")), f"`{a['branch']}`", f"${a.get('cost_usd', 0):.2f}",
+               "?" if a.get("turns") is None else str(a["turns"]), str(a.get("files_changed", "?")), a.get("status", "?")]
+        row += ["pass" if c["exit"] == 0 else "fail" for c in a.get("checks") or []]
+        row.append(str(a.get("denied", "?")))
+        L.append("| " + " | ".join(row) + " |")
+    return L
+
+
 def direction_outcome(d):
     parts = []
     if d.get("learned"):
@@ -321,10 +362,7 @@ def render_log(st):
         for run in st["variants"]:
             L.append(f"Run {short(run['at'])}: {run['n']} arms, ${run['cap_usd']} cap each, model {run['model']}. Question: {run['question']}")
             L.append("")
-            L.append("| arm | branch | cost | turns | files | result |")
-            L.append("|---|---|---|---|---|---|")
-            for a in run["arms"]:
-                L.append(f"| v{a['i']} | `{a['branch']}` | ${a.get('cost_usd', 0):.2f} | {a.get('turns', '?')} | {a.get('files_changed', '?')} | {a.get('status', '?')} |")
+            L += variant_run_lines(run)
             L.append("")
             L.append(f"Outputs under `scouting/{st['slug']}/variants/run-{run['id']}/`.")
             L.append("")
@@ -463,7 +501,7 @@ def render_handoff(st, top=None):
     # Arms fork from the scout's head, not its base; the arm line shows its own commit instead.
     for run in st.get("variants", []):
         for a in run["arms"]:
-            L.append(f"- variant run {run['id']} arm v{a['i']}: `{a['branch']}`{branch_mark(a['branch'], None, top)} @ `{(a.get('commit') or '?')[:12]}`, ${a.get('cost_usd', 0):.2f}")
+            L.append(f"- variant run {run['id']} arm v{a['i']} ({a.get('approach', 'sampled')}): `{a['branch']}`{branch_mark(a['branch'], None, top)} @ `{(a.get('commit') or '?')[:12]}`, ${a.get('cost_usd', 0):.2f}")
     for s in st["sessions"]:
         L.append(f"- transcript: {s.get('transcript_path') or s['session_id']}{transcript_mark(s.get('transcript_path'))}")
     L.append(f"- log: scouting/{st['slug']}/log.md")
@@ -475,16 +513,20 @@ def render_handoff(st, top=None):
         L.append(c["repro"])
         L.append("")
     if st.get("prereg"):
-        p = st["prereg"]
         L.append("## Pre-registration")
         L.append("")
-        L.append(f"- question: {p['question']}")
-        L.append(f"- arms: {p['arms']}")
-        L.append(f"- runs: {p['runs']}")
-        L.append(f"- pass rule: {p['pass_rule']}")
-        L.append(f"- cost bound: ${p['cost_usd']}")
-        L.append(f"- registered: {short(p['at'])} (before any scored run)")
-        L.append("")
+        for p in st["prereg"]:
+            L.append(f"### {p['id']}")
+            L.append("")
+            L.append(f"- question: {p['question']}")
+            L.append(f"- arms: {p['arms']}")
+            L.append(f"- runs: {p['runs']}")
+            L.append(f"- pass rule: {p['pass_rule']}")
+            L.append(f"- floor: {p.get('floor') or '(not recorded; registered before a floor was required)'}")
+            L.append(f"- cost bound: ${p['cost_usd']}")
+            L.append(f"- registered: {short(p['at'])} (before any scored run)")
+            L.append(f"- status: {prereg_status_label(p)}")
+            L.append("")
     L.append("## Thrown away")
     L.append("")
     L.append(c.get("thrown_away") or "(nothing recorded)")
@@ -542,7 +584,7 @@ def cmd_start(args):
         "questions": [],
         "variants": [],
         "sessions": [],
-        "prereg": None,
+        "prereg": [],
         "close": {},
     }
     record_session(st, read_session_file(root))
@@ -611,8 +653,7 @@ def cmd_answer(args):
     read_stdin_fields(args)
     root = scouts_root(args)
     st = load(root, current_slug(root, args.scout))
-    m = re.fullmatch(r"[Qq]?(\d+)", args.id.strip())
-    qid = f"Q{int(m.group(1))}" if m else args.id
+    qid = parse_id(args.id, "Q")
     hit = [q for q in st["questions"] if q["id"] == qid]
     if not hit:
         die(f"no question {qid}")
@@ -809,11 +850,33 @@ def cmd_close(args):
 def cmd_prereg(args):
     root = scouts_root(args)
     st = load(root, current_slug(root, args.scout))
-    st["prereg"] = {"question": args.question, "arms": args.arms, "runs": args.runs,
-                    "pass_rule": args.pass_rule, "cost_usd": args.cost_usd, "at": now()}
-    _entry(st, "pre-registered", f"{args.question} — arms: {args.arms}; runs: {args.runs}; pass: {args.pass_rule}; cost ${args.cost_usd}")
+    pid = f"R{len(st['prereg']) + 1}"
+    st["prereg"].append({"id": pid, "question": args.question, "arms": args.arms, "runs": args.runs,
+                         "pass_rule": args.pass_rule, "floor": args.floor, "cost_usd": args.cost_usd, "at": now(),
+                         "status": "open", "status_evidence": None})
+    _entry(st, f"pre-registered {pid}", f"{args.question} — arms: {args.arms}; runs: {args.runs}; pass: {args.pass_rule}; "
+                                        f"floor: {args.floor}; cost ${args.cost_usd}")
     save(root, st)
-    print("pre-registration recorded; run the scored comparison only after this point")
+    print(f"{pid} pre-registered; run the scored comparison only after this point")
+
+
+def cmd_prereg_status(args):
+    read_stdin_fields(args)
+    root = scouts_root(args)
+    st = load(root, current_slug(root, args.scout))
+    pid = parse_id(args.id, "R")
+    hit = [p for p in st["prereg"] if p["id"] == pid]
+    if not hit:
+        die(f"no pre-registration {pid}")
+    p = hit[0]
+    if p["status"] != "open":
+        die(f"{pid} is already {prereg_status_label(p)}")
+    p["status"] = args.status
+    p["status_evidence"] = args.evidence
+    p["status_at"] = now()
+    _entry(st, f"pre-registration {pid} {args.status}", args.evidence)
+    save(root, st)
+    print(f"{pid} {prereg_status_label(p)}")
 
 
 def cmd_handoff(args):
@@ -856,6 +919,9 @@ def cover_gaps(st, text):
     for sb in open_stubs(st):
         if f"- stubbed: {sb['id']} {sb['text']}" not in text:
             gaps.append("stub " + sb["id"])
+    for p in st.get("prereg") or []:
+        if f"### {p['id']}\n" not in text:
+            gaps.append("pre-registration " + p["id"])
     return gaps
 
 
@@ -1066,6 +1132,59 @@ def cmd_recover(args):
     print(render_decisions(st))
 
 
+# ---------------------------------------------------------------- spawns
+
+def refuse_over_box(st, usd, remedy):
+    if st["box"].get("usd") is None:
+        return
+    left = st["box"]["usd"] - st["spent"]["usd"]
+    if usd > left:
+        die(f"run would exceed the box: ${max(left, 0):.2f} left; {remedy}")
+
+
+def _claude_cmd(model, cap, tools):
+    cmd = ["claude", "-p", "--model", model, "--max-budget-usd", str(cap), "--output-format", "json",
+           "--permission-prompts", "none", "--no-session-persistence"]
+    if tools:
+        cmd += ["--allowedTools", tools]
+    return cmd
+
+
+def _spawn_claude(cmd, cwd, prompt):
+    env = dict(os.environ)
+    env.pop("CLAUDECODE", None)
+    proc = subprocess.Popen(cmd, cwd=cwd, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    # The prompt is written at launch, not at collection time: the CLI gives up on an
+    # empty stdin after a few seconds, and arms are collected one after another.
+    try:
+        proc.stdin.write(prompt)
+        proc.stdin.close()
+    except BrokenPipeError:
+        pass
+    proc.stdin = None  # communicate() must not touch the closed pipe
+    return proc
+
+
+def _collect(proc, timeout):
+    try:
+        return proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        stdout, stderr = proc.communicate()
+        return stdout, stderr + "\n[scout: killed on timeout]"
+
+
+def _parse_result(stdout):
+    """The CLI's json result, or None when stdout is not json."""
+    try:
+        result = json.loads(stdout) if stdout.strip() else {}
+    except json.JSONDecodeError:
+        return None
+    if isinstance(result, list):
+        result = next((r for r in reversed(result) if r.get("type") == "result"), {})
+    return result
+
+
 # ---------------------------------------------------------------- variants
 
 VARIANT_PROMPT = """You are arm v{i} of {n} in a scout. Question: {question}
@@ -1076,9 +1195,11 @@ Rules:
 - Before finishing, write VARIANT.md at the repository root: what you built, what you found, what you would measure next, every assumption you made. Commit nothing; the harness commits for you.
 - You have a dollar cap of ${cap}. Prefer evidence over polish.
 """
+APPROACH_RULE = "- Your approach: {approach}. The other arms take different positions on the same axis; do not converge on a middle ground.\n"
+CHECKS_RULE = "- You will be judged by: {checks}. The harness runs each in your worktree after you finish; your own report counts only as a claim.\n"
 
 
-def _run_arm(i, n, st, run_id, top, question, cap, model, tools, timeout, extra_args):
+def _run_arm(i, n, st, root, run_id, top, question, approach, checks, cap, model, tools, extra_args):
     wt_root = top.parent / f"{top.name}-scout-worktrees"
     wt_root.mkdir(parents=True, exist_ok=True)
     branch = f"scout/{st['slug']}-run{run_id}-v{i}"
@@ -1088,47 +1209,43 @@ def _run_arm(i, n, st, run_id, top, question, cap, model, tools, timeout, extra_
         git(["worktree", "prune"], cwd=top, check=False)
     git(["worktree", "add", "-q", "-b", branch, str(wt)], cwd=top)
     prompt = VARIANT_PROMPT.format(i=i, n=n, question=question, branch=branch, cap=cap)
-    cmd = ["claude", "-p", "--model", model, "--max-budget-usd", str(cap), "--output-format", "json",
-           "--permission-mode", "acceptEdits", "--permission-prompts", "none", "--no-session-persistence"]
-    if tools:
-        cmd += ["--allowedTools", tools]
-    cmd += extra_args
-    out_dir = Path(st["_root"]) / st["slug"] / "variants" / f"run-{run_id}" / f"v{i}"
+    if approach:
+        prompt += APPROACH_RULE.format(approach=approach)
+    if checks:
+        prompt += CHECKS_RULE.format(checks="; ".join(f"`{c}`" for c in checks))
+    cmd = _claude_cmd(model, cap, tools) + ["--permission-mode", "acceptEdits"] + extra_args
+    out_dir = root / st["slug"] / "variants" / f"run-{run_id}" / f"v{i}"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "prompt.md").write_text(prompt)
-    env = dict(os.environ)
-    env.pop("CLAUDECODE", None)
-    proc = subprocess.Popen(cmd, cwd=wt, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
-    # The prompt is written at launch, not at collection time: the CLI gives up on an
-    # empty stdin after a few seconds, and arms are collected one after another.
-    try:
-        proc.stdin.write(prompt)
-        proc.stdin.close()
-    except BrokenPipeError:
-        pass
-    proc.stdin = None  # communicate() must not touch the closed pipe
-    return {"i": i, "branch": branch, "worktree": str(wt), "proc": proc, "out_dir": out_dir, "prompt": prompt, "started": now()}
+    proc = _spawn_claude(cmd, wt, prompt)
+    return {"i": i, "branch": branch, "worktree": str(wt), "proc": proc, "out_dir": out_dir, "prompt": prompt,
+            "approach": approach or "sampled", "started": now()}
 
 
-def _finish_arm(arm, top, timeout):
-    proc = arm["proc"]
+def _run_check(k, cmd, cwd, timeout, out_dir):
     try:
-        stdout, stderr = proc.communicate(timeout=timeout)
+        r = subprocess.run(["bash", "-c", cmd], cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
+        code, tail = r.returncode, "\n".join(r.stdout.splitlines()[-20:])
     except subprocess.TimeoutExpired:
-        proc.kill()
-        stdout, stderr = proc.communicate()
-        stderr += "\n[scout: killed on timeout]"
+        code, tail = None, f"[scout: killed after {timeout}s]"
+    (out_dir / f"check-{k}.txt").write_text(f"$ {cmd}\nexit: {'timeout' if code is None else code}\n{tail}\n")
+    return {"cmd": cmd, "exit": code}
+
+
+def _finish_arm(arm, top, timeout, checks, check_timeout):
+    proc = arm["proc"]
+    stdout, stderr = _collect(proc, timeout)
     out_dir = arm["out_dir"]
     (out_dir / "stderr.txt").write_text(stderr or "")
-    result = {}
-    try:
-        result = json.loads(stdout) if stdout.strip() else {}
-        if isinstance(result, list):
-            result = next((r for r in reversed(result) if r.get("type") == "result"), {})
-    except json.JSONDecodeError:
+    result = _parse_result(stdout)
+    if result is None:
         (out_dir / "stdout.txt").write_text(stdout)
+        result = {}
     (out_dir / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     (out_dir / "output.md").write_text(str(result.get("result", "")) + "\n")
+    denials = result.get("permission_denials") or []
+    if denials:
+        (out_dir / "denials.txt").write_text(json.dumps(denials, indent=2) + "\n")
     wt = arm["worktree"]
     vm = Path(wt) / "VARIANT.md"
     if vm.exists():
@@ -1144,12 +1261,14 @@ def _finish_arm(arm, top, timeout):
     else:
         files = 0
     return {
-        "i": arm["i"], "branch": arm["branch"], "worktree": wt, "commit": commit,
+        "i": arm["i"], "approach": arm["approach"], "branch": arm["branch"], "worktree": wt, "commit": commit,
         "cost_usd": float(result.get("total_cost_usd") or 0.0),
         "turns": result.get("num_turns"),
         "status": result.get("subtype") or ("error" if proc.returncode else "unknown"),
         "exit_code": proc.returncode, "files_changed": files,
         "session_id": result.get("session_id"),
+        "checks": [_run_check(k, c, wt, check_timeout, out_dir) for k, c in enumerate(checks, 1)],
+        "denied": len(denials),
     }
 
 
@@ -1167,37 +1286,83 @@ def next_run_id(st, top):
 def cmd_variants(args):
     root = scouts_root(args)
     st = load(root, current_slug(root, args.scout))
-    st["_root"] = str(root)
     if not 2 <= args.n <= 4:
         die("variants: n must be 2..4; more arms stop being evidence and start being noise")
-    if st["box"].get("usd") is not None:
-        left = st["box"]["usd"] - st["spent"]["usd"]
-        if args.n * args.usd > left:
-            die(f"run would exceed the box: ${max(left, 0):.2f} left; fewer arms, a lower --usd, or pivot/close")
+    if args.arm and len(args.arm) != args.n:
+        die(f"variants: --arm given {len(args.arm)} times for {args.n} arms; name one approach per arm, or none to sample")
+    if not args.criterion:
+        die("variants: write the comparison criteria before launching, one --criterion per observable check; a metric chosen afterwards is the one the favorite won")
+    refuse_over_box(st, args.n * args.usd, "fewer arms, a lower --usd, or pivot/close")
     top = root.parent
     if git(["status", "--porcelain"], cwd=top, check=False) and not args.allow_dirty:
         die("working tree is dirty; commit first so every arm starts from the same base (or --allow-dirty)")
     run_id = next_run_id(st, top)
     question = args.question or st["question"]
+    approaches = args.arm or [None] * args.n
+    checks = args.check or []
     if args.dry_run:
-        for i in range(1, args.n + 1):
-            print(f"would run arm v{i}: worktree {top.parent / (top.name + '-scout-worktrees') / (st['slug'] + f'-run{run_id}-v{i}')}, cap ${args.usd}, model {args.model}")
+        print("criteria (fixed before launch): " + "; ".join(args.criterion))
+        for k, c in enumerate(checks, 1):
+            print(f"check c{k}: {c}")
+        for i, approach in enumerate(approaches, 1):
+            print(f"would run arm v{i} ({approach or 'sampled'}): worktree {top.parent / (top.name + '-scout-worktrees') / (st['slug'] + f'-run{run_id}-v{i}')}, cap ${args.usd}, model {args.model}")
         return
-    arms = [_run_arm(i, args.n, st, run_id, top, question, args.usd, args.model, args.tools, args.timeout, args.claude_args or [])
-            for i in range(1, args.n + 1)]
-    print(f"{args.n} arms running (cap ${args.usd} each, model {args.model})...", file=sys.stderr)
-    results = [_finish_arm(a, top, args.timeout) for a in arms]
-    del st["_root"]
-    run = {"id": run_id, "at": now(), "n": args.n, "question": question, "cap_usd": args.usd, "model": args.model, "arms": results}
+    run = {"id": run_id, "at": now(), "n": args.n, "question": question, "cap_usd": args.usd, "model": args.model,
+           "criteria": args.criterion, "checks": checks, "arms": []}
     st["variants"].append(run)
-    st["spent"]["usd"] += sum(r["cost_usd"] for r in results)
-    _entry(st, "variants", f"run {run_id}: {args.n} arms on '{question}', total ${sum(r['cost_usd'] for r in results):.2f}")
+    save(root, st)
+    arms = [_run_arm(i, args.n, st, root, run_id, top, question, approach, checks, args.usd, args.model, args.tools, args.claude_args or [])
+            for i, approach in enumerate(approaches, 1)]
+    print(f"{args.n} arms running (cap ${args.usd} each, model {args.model})...", file=sys.stderr)
+    run["arms"] = [_finish_arm(a, top, args.timeout, checks, args.check_timeout) for a in arms]
+    total = sum(r["cost_usd"] for r in run["arms"])
+    st["spent"]["usd"] += total
+    _entry(st, "variants", f"run {run_id}: {args.n} arms on '{question}', total ${total:.2f}")
     save(root, st)
     print(f"run {run_id} done. compare the arms as evidence — outputs under scouting/{st['slug']}/variants/run-{run_id}/")
-    print("| arm | branch | cost | turns | files | status |")
-    print("|---|---|---|---|---|---|")
-    for r in results:
-        print(f"| v{r['i']} | {r['branch']} | ${r['cost_usd']:.2f} | {r['turns']} | {r['files_changed']} | {r['status']} |")
+    print("\n".join(variant_run_lines(run)))
+    warn_box(st)
+
+
+# ---------------------------------------------------------------- cold read
+
+COLDREAD_PROMPT = """You are a talented software engineer. You have been handed {path} and asked to put together a plan to build what it leads to. You will not be able to talk to the person who wrote it.
+
+Read {path}. You may open what it points to in this repository; change nothing.
+
+Report only the questions you would still need answered before you could plan this well: places where you would have to guess and a wrong guess would change the plan. For each, give the question and why the answer changes the plan. Rank them, most important first.
+
+Skip anything the handoff explicitly leaves to the builder, and anything you could reasonably decide yourself. Skip nitpicks about wording.
+
+If nothing important is left, say "nothing important left".
+"""
+
+
+def cmd_coldread(args):
+    root = scouts_root(args)
+    st = load(root, current_slug(root, args.scout, allow_closed=True))
+    if not (root / st["slug"] / "handoff.md").exists():
+        die("no handoff.md yet; run `scout handoff` first, then cold-read what it wrote")
+    refuse_over_box(st, args.usd, "a lower --usd")
+    top = root.parent
+    rel = f"{root.name}/{st['slug']}/handoff.md"
+    proc = _spawn_claude(_claude_cmd(args.model, args.usd, "Read,Grep,Glob"), top, COLDREAD_PROMPT.format(path=rel))
+    stdout, stderr = _collect(proc, args.timeout)
+    result = _parse_result(stdout) or {}
+    cost = float(result.get("total_cost_usd") or 0.0)
+    st["spent"]["usd"] += cost
+    text = str(result.get("result") or "").strip()
+    out = root / st["slug"] / "coldread.md"
+    if text:
+        out.write_text(f"# Cold read: {st['question']}\n\n"
+                       f"<!-- a fresh {args.model} agent, capped at ${args.usd}, read {rel} on {short(now())}; "
+                       f"${cost:.2f}, {result.get('subtype') or '?'} -->\n\n{text}\n")
+        _entry(st, "cold read", f"{root.name}/{st['slug']}/coldread.md, ${cost:.2f}")
+    save(root, st)
+    if not text:
+        die("the cold read returned no result" + (f": {stderr.strip()[-400:]}" if stderr.strip() else ""), code=1)
+    print(out)
+    print(text)
     warn_box(st)
 
 
@@ -1292,16 +1457,31 @@ def main(argv=None):
     s.add_argument("--question", required=True)
     s.add_argument("--arms", required=True)
     s.add_argument("--runs", required=True)
-    s.add_argument("--pass-rule", required=True)
+    s.add_argument("--pass-rule", required=True, help="including the runs discarded as warmup and the spread tolerated")
+    s.add_argument("--floor", required=True, help="what an arm that changed nothing scores, and why that fails the pass rule")
     s.add_argument("--cost-usd", type=float, required=True)
     s.add_argument("--scout")
     s.set_defaults(fn=cmd_prereg)
+
+    s = sub.add_parser("prereg-status", help="record what became of pre-registration P<n>; nothing else in it changes")
+    s.add_argument("id", help="R1, or 1")
+    s.add_argument("status", choices=["passed", "failed", "dropped"])
+    s.add_argument("--evidence", required=True, help="pointer to the scored run, or why it was dropped; '-' reads stdin")
+    s.add_argument("--scout")
+    s.set_defaults(fn=cmd_prereg_status)
 
     s = sub.add_parser("handoff", help="write handoff.md (refuses if a decision, direction, branch or question would be dropped)")
     s.add_argument("--no-check", action="store_true")
     s.add_argument("--scout")
     s.add_argument("--print", action="store_true")
     s.set_defaults(fn=cmd_handoff)
+
+    s = sub.add_parser("coldread", help="a fresh, capped, read-only agent reads handoff.md and lists what it would have to guess")
+    s.add_argument("--usd", type=float, default=0.5, help="dollar cap")
+    s.add_argument("--model", default="opus")
+    s.add_argument("--timeout", type=int, default=600)
+    s.add_argument("--scout")
+    s.set_defaults(fn=cmd_coldread)
 
     s = sub.add_parser("status", help="list scouts, directions, boxes, open decisions")
     s.add_argument("-v", "--verbose", action="store_true")
@@ -1320,6 +1500,10 @@ def main(argv=None):
     s = sub.add_parser("variants", help="run 2..4 arms of one question in separate worktrees")
     s.add_argument("n", type=int)
     s.add_argument("question", nargs="?")
+    s.add_argument("--arm", action="append", metavar="APPROACH", help="the position on the axis one arm builds (repeatable, exactly n times, or none to sample)")
+    s.add_argument("--criterion", action="append", help="observable comparison criterion, stored before launch (repeatable, required)")
+    s.add_argument("--check", action="append", metavar="CMD", help="acceptance command the harness runs in every arm's worktree after it finishes (repeatable)")
+    s.add_argument("--check-timeout", type=int, default=300)
     s.add_argument("--usd", type=float, default=2.0, help="dollar cap per arm")
     s.add_argument("--model", default="opus")
     s.add_argument("--tools", default="Bash", help="--allowedTools for each arm ('' for none)")
