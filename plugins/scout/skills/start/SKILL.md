@@ -15,7 +15,7 @@ Open the scout, then explore the code before deciding anything. Agents find most
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scout.py" start "<question>" [--hours N] [--usd N] [--kill "<criterion>"]... [--worktree]
    ```
 
-   `$ARGUMENTS` holds what the operator typed. If no box was given, use `--hours 4 --usd 10` and say so in one line. If no kill criterion was given, derive one from the question ("kill if <the cheapest thing that would prove it cannot work>") and pass it with `--kill`. The script creates `scouting/<slug>/`, branch `scout/<slug>` in place (`--worktree` for a worktree), and records the box.
+   `$ARGUMENTS` holds what the operator typed. If no box was given, use `--hours 4 --usd 10` and say so in one line. If no kill criterion was given, derive one from the question ("kill if <the cheapest observation that would prove it cannot work>") and pass it with `--kill`; add a `--keep` criterion when the question has a yes ("keep if <the observation that would settle it>"). Both are fixed now, before anything is built: deciding what counts as failure after seeing results turns a scout into a rationalization. Pick the first `--direction` by risk: the one most likely to kill the idea runs first. The script creates `scouting/<slug>/`, branch `scout/<slug>` in place (`--worktree` for a worktree), and records the box.
 
 2. Explore the code that the question touches. Read the real files; grep callers; run the existing tests if they are cheap. No design yet.
 
@@ -33,4 +33,4 @@ Open the scout, then explore the code before deciding anything. Agents find most
 
 4. Tell the operator in three lines: the slug and branch, the box and kill criteria, and the one thing the code told you that changes the plan. Then continue in conversation mode (`/scout:think`).
 
-Never write a decision at this point. Decisions are written when a direction ends.
+Never write a decision at this point. Decisions are written when a direction ends. Reconnaissance may sharpen the question; findings produced by the thing built to test it must never reshape it.

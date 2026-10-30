@@ -28,14 +28,26 @@ common path.
 4. **Decisions are written at the end of a direction, not the start.** `decisions.md` is
    never the output of a dialog: it is recorded when the operator says "record this", or
    recovered at the close from the diff and the transcript. Each decision carries who settled
-   it: `operator` (their words, quoted or pointed to), `code` (a constraint with a file:line
-   or commit), or `open`. A later direction that reverses a decision marks it superseded and
-   leaves it in place.
+   it: `operator` (their words, quoted, or a transcript pointer; the script refuses it without
+   one), `code` (a constraint with a file:line or commit, labelled `proved` when this scout
+   observed it and `inferred` when reasoned from elsewhere), or `open` (with the question to
+   ask). A later direction that reverses a decision marks it superseded and leaves it in
+   place; a replacement decision marks the old one by id. Before closing, the inferred ones
+   are re-run: the setup exists by then, and an inference is where a scout is most confidently
+   wrong.
+4a. **Kill and keep criteria are fixed before the build**, and re-read before a pivot or close,
+   not after. The close gives the question a verdict, `proven`, `disproven`, `conditional` or
+   `unanswered`, and lists what is still unknown, because a scout that names what it did not
+   settle bounds its own authority. Most honest disproofs are conditional: name the thing held
+   fixed.
 5. **Pre-registration only once a question is measurable**, and then before the scored run:
    arms, runs, pass rule, cost bound. The handoff carries it; the plugin never invents one.
 6. **Two to four variants at most**, each in its own worktree and branch, each its own
    `claude -p` process with its own `--max-budget-usd`, compared as evidence. The prompt
    forbids leaving the worktree; the worktrees are siblings, so no arm sees another's draft.
+   The arms differ on one axis, the criteria are written before the race and judged on
+   behavior, no hybrid is cherry-picked, and nothing is deleted before the operator has seen
+   the comparison.
 7. **Every spawn has a dollar cap**, enforced by the CLI between turns. The scout's own box is
    metered from spawn costs plus what the operator logs (`scout spent`); the interactive
    session's own bill is not visible to the plugin and is not claimed.

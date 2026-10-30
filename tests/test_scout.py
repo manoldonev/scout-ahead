@@ -97,6 +97,62 @@ class ScoutRepo(unittest.TestCase):
         self.assertIn("[closed, commit]", out)
         self.assertIn("decisions: 2 live, 1 open", out)
 
+    def test_borrowed_rules(self):
+        """Operator needs a quote; code carries proved/inferred; decisions supersede by id; open carries the ask;
+        keep criteria; verdict and unknowns at close; handoff refuses to drop anything."""
+        self.scout("start", "q rules", "--no-branch", "--keep", "p50 under 10ms", "--kill", "no path without isinstance")
+        log = (self.repo / "scouting" / "q-rules" / "log.md").read_text()
+        self.assertIn("Keep if: p50 under 10ms.", log)
+        r = self.scout("decide", "use X", "--by", "operator", check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("needs --evidence", r.stderr)
+        r = self.scout("decide", "use X", "--by", "open", "--proof", "proved", check=False)
+        self.assertEqual(r.returncode, 2)
+        self.scout("decide", "use X", "--by", "code", "--evidence", "a.txt:1")
+        self.scout("decide", "use Y instead", "--by", "code", "--proof", "proved", "--evidence", "run output", "--supersedes", "D1")
+        self.scout("decide", "eviction policy", "--by", "open", "--ask", "LRU or TTL?")
+        st = self.state("q-rules")
+        self.assertEqual(st["decisions"][0]["proof"], "inferred")
+        self.assertEqual(st["decisions"][0]["superseded_by"], "D2")
+        self.assertEqual(st["decisions"][1]["supersedes"], ["D1"])
+        dec = (self.repo / "scouting" / "q-rules" / "decisions.md").read_text()
+        self.assertIn("- settled by: code, inferred", dec)
+        self.assertIn("- settled by: code, proved", dec)
+        self.assertIn("- supersedes: D1", dec)
+        self.assertIn("- superseded by: D2", dec)
+        self.assertIn("- question to ask: LRU or TTL?", dec)
+        self.scout("close", "--outcome", "kill", "--verdict", "conditional", "--verdict-note", "only if the cache is per process",
+                   "--unknown", "behaviour under concurrency", "--unknown", "cold start")
+        log = (self.repo / "scouting" / "q-rules" / "log.md").read_text()
+        self.assertIn("Verdict on the question: CONDITIONAL — only if the cache is per process", log)
+        self.assertIn("- cold start", log)
+        out = self.scout("handoff", "--print").stdout
+        self.assertIn("| D1 | use X | code, inferred | a.txt:1 | D2 |", out)
+        self.assertIn("- D3: eviction policy — ask: LRU or TTL?", out)
+        self.assertIn("## Still unknown", out)
+        self.assertIn("- behaviour under concurrency", out)
+        self.assertIn("Keep criteria: p50 under 10ms.", out)
+
+    def test_handoff_cover_check(self):
+        self.scout("start", "q cover", "--no-branch")
+        self.scout("decide", "d one", "--by", "code", "--evidence", "x")
+        st = self.state("q-cover")
+        st["decisions"][0]["id"] = "D-odd id"
+        (self.repo / "scouting" / "q-cover" / "state.json").write_text(json.dumps(st))
+        self.assertEqual(self.scout("handoff", check=False).returncode, 0, "an unusual id still renders in the table")
+        st["questions"].append({"text": "unrendered?", "at": "t", "direction": 1, "answered": None})
+        (self.repo / "scouting" / "q-cover" / "state.json").write_text(json.dumps(st))
+        self.assertEqual(self.scout("handoff", check=False).returncode, 0)
+        # simulate a renderer regression: the open question list cannot show a question whose text is swallowed
+        import subprocess as sp
+        script = SCRIPT.read_text().replace('L.append(f"- {q[\'text\']}")', 'pass')
+        broken = self.repo / "broken.py"; broken.write_text(script)
+        r = sp.run([sys.executable, str(broken), "handoff"], cwd=self.repo, text=True, capture_output=True)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("handoff would drop: question: unrendered?", r.stderr)
+        r = sp.run([sys.executable, str(broken), "handoff", "--no-check"], cwd=self.repo, text=True, capture_output=True)
+        self.assertEqual(r.returncode, 0)
+
     def test_slug_cuts_on_word_boundary(self):
         self.scout("start", "Can a hook re-inject the scout after compaction happens?", "--no-branch")
         slugs = [p.name for p in (self.repo / "scouting").iterdir() if p.is_dir()]

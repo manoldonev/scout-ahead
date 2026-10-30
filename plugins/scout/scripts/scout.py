@@ -122,6 +122,19 @@ def cur_direction(st):
     return st["directions"][-1]
 
 
+def by_label(d):
+    if d["by"] == "code" and d.get("proof"):
+        return f"code, {d['proof']}"
+    return d["by"]
+
+
+def superseded_label(d):
+    sb = d.get("superseded_by")
+    if sb is None:
+        return ""
+    return f"direction {sb}" if isinstance(sb, int) else str(sb)
+
+
 def open_decisions(st):
     return [d for d in st["decisions"] if d["by"] == "open" and not d.get("superseded_by")]
 
@@ -173,6 +186,8 @@ def render_log(st):
     L.append(f"Opened {short(st['opened_at'])} on branch `{st['branch'] or '(no branch)'}` from `{st['base'][:12] if st['base'] else '?'}`.")
     b = st["box"]
     L.append(f"Box: {b.get('hours', '—')} hours, ${b.get('usd', '—')}. Spent: {box_line(st)}.")
+    if st.get("keep"):
+        L.append("Keep if: " + "; ".join(st["keep"]) + ".")
     if st["kill"]:
         L.append("Kill when: " + "; ".join(st["kill"]) + ".")
     else:
@@ -219,6 +234,14 @@ def render_log(st):
         L.append("")
         L.append(f"Thrown away: {c.get('thrown_away') or '(nothing recorded)'}")
         L.append("")
+        if c.get("verdict"):
+            L.append(f"Verdict on the question: {c['verdict'].upper()}" + (f" — {c['verdict_note']}" if c.get("verdict_note") else ""))
+            L.append("")
+        if c.get("unknown"):
+            L.append("Still unknown:")
+            for u in c["unknown"]:
+                L.append(f"- {u}")
+            L.append("")
     if st["sessions"]:
         L.append("## Sessions")
         L.append("")
@@ -238,11 +261,15 @@ def render_decisions(st):
     for d in st["decisions"]:
         L.append(f"## {d['id']} — {d['text']}")
         L.append("")
-        L.append(f"- settled by: {d['by']}")
+        L.append(f"- settled by: {by_label(d)}")
         L.append(f"- evidence: {d.get('evidence') or '(none)'}")
+        if d.get("ask"):
+            L.append(f"- question to ask: {d['ask']}")
         L.append(f"- direction: {d['direction']}, recorded {short(d['at'])}")
-        if d.get("superseded_by"):
-            L.append(f"- superseded by: direction {d['superseded_by']}")
+        if d.get("supersedes"):
+            L.append(f"- supersedes: {', '.join(d['supersedes'])}")
+        if d.get("superseded_by") is not None:
+            L.append(f"- superseded by: {superseded_label(d)}")
         L.append("")
     return "\n".join(L)
 
@@ -259,9 +286,13 @@ def render_handoff(st):
     L.append("")
     status = st["status"] + (f", {st['outcome']}" if st.get("outcome") else "")
     L.append(f"{status}. {len(st['directions'])} direction(s) tried. Box: {box_line(st)}.")
+    if st.get("keep"):
+        L.append("Keep criteria: " + "; ".join(st["keep"]) + ".")
     if st["kill"]:
         L.append("Kill criteria: " + "; ".join(st["kill"]) + ".")
     c = st.get("close") or {}
+    if c.get("verdict"):
+        L.append(f"Verdict on the question: {c['verdict'].upper()}" + (f" — {c['verdict_note']}" if c.get("verdict_note") else ""))
     if c.get("learned"):
         L.append("")
         L.append("Learned: " + c["learned"])
@@ -271,12 +302,11 @@ def render_handoff(st):
     L.append("| id | decision | settled by | evidence | superseded by |")
     L.append("|---|---|---|---|---|")
     for d in st["decisions"]:
-        sup = f"direction {d['superseded_by']}" if d.get("superseded_by") else ""
-        L.append(f"| {d['id']} | {d['text']} | {d['by']} | {d.get('evidence') or ''} | {sup} |")
+        L.append(f"| {d['id']} | {d['text']} | {by_label(d)} | {d.get('evidence') or ''} | {superseded_label(d)} |")
     if not st["decisions"]:
         L.append("| | (none recorded) | | | |")
     L.append("")
-    L.append("settled by: operator = the operator said it (maps to a ledger's user-answered); code = the code or a measurement forced it (codebase-derived); open = nobody settled it (deferred).")
+    L.append("settled by: operator = the operator said it, quoted or pointed to (a ledger's user-answered; why-log's testimony); code = the code or a measurement forced it (codebase-derived), proved when observed in this scout and inferred when reasoned from elsewhere; open = nobody settled it (deferred). A superseded decision stays as history.")
     L.append("")
     L.append("## Open questions")
     L.append("")
@@ -285,7 +315,7 @@ def render_handoff(st):
     if not opens and not qs:
         L.append("(none)")
     for d in opens:
-        L.append(f"- {d['id']}: {d['text']}")
+        L.append(f"- {d['id']}: {d['text']}" + (f" — ask: {d['ask']}" if d.get("ask") else ""))
     for q in qs:
         L.append(f"- {q['text']}")
     L.append("")
@@ -318,6 +348,14 @@ def render_handoff(st):
     L.append("## Thrown away")
     L.append("")
     L.append(c.get("thrown_away") or "(nothing recorded)")
+    L.append("")
+    L.append("## Still unknown")
+    L.append("")
+    if c.get("unknown"):
+        for u in c["unknown"]:
+            L.append(f"- {u}")
+    else:
+        L.append("(nothing recorded; a scout that names what it did not settle bounds its own authority)")
     L.append("")
     return "\n".join(L)
 
@@ -353,6 +391,7 @@ def cmd_start(args):
         "box": {"hours": args.hours, "usd": args.usd},
         "spent": {"hours": 0.0, "usd": 0.0},
         "kill": args.kill or [],
+        "keep": args.keep or [],
         "branch": branch,
         "base": base,
         "head": None,
@@ -485,7 +524,8 @@ def cmd_close(args):
     st["status"] = "closed"
     st["outcome"] = args.outcome
     st["closed_at"] = now()
-    st["close"] = {"tried": args.tried, "learned": args.learned, "thrown_away": args.thrown_away}
+    st["close"] = {"tried": args.tried, "learned": args.learned, "thrown_away": args.thrown_away,
+                   "verdict": args.verdict, "verdict_note": args.verdict_note, "unknown": args.unknown or []}
     top = root.parent
     st["head"] = git(["rev-parse", "HEAD"], cwd=top, check=False) or st.get("head")
     save(root, st)
@@ -512,10 +552,35 @@ def cmd_handoff(args):
     st["head"] = git(["rev-parse", "HEAD"], cwd=top, check=False) or st.get("head")
     save(root, st)
     p = root / st["slug"] / "handoff.md"
-    p.write_text(render_handoff(st))
+    text = render_handoff(st)
+    missing = cover_gaps(st, text)
+    if missing and not args.no_check:
+        die("handoff would drop: " + "; ".join(missing))
+    p.write_text(text)
     print(p)
     if args.print:
         print(p.read_text())
+
+
+def cover_gaps(st, text):
+    """Everything the record holds must be visible in the handoff: ids, directions, branches, open questions."""
+    gaps = []
+    for d in st["decisions"]:
+        if f"| {d['id']} |" not in text:
+            gaps.append(d["id"])
+    for i, d in enumerate(st["directions"], 1):
+        if f"- direction {i}:" not in text:
+            gaps.append(f"direction {i}")
+    if st["branch"] and f"`{st['branch']}`" not in text:
+        gaps.append(st["branch"])
+    for run in st.get("variants", []):
+        for a in run["arms"]:
+            if f"`{a['branch']}`" not in text:
+                gaps.append(a["branch"])
+    for q in st["questions"]:
+        if not q.get("answered") and q["text"] not in text:
+            gaps.append("question: " + q["text"][:40])
+    return gaps
 
 
 def cmd_status(args):
@@ -553,7 +618,7 @@ def context_text(st, current_session=None):
         L.append(f"  - {e['kind']}: {e['text']}")
     live = live_decisions(st)
     if live:
-        L.append("Decisions in force: " + "; ".join(f"{d['id']} {d['text']} [{d['by']}]" for d in live))
+        L.append("Decisions in force: " + "; ".join(f"{d['id']} {d['text']} [{by_label(d)}]" for d in live))
     od = open_decisions(st)
     qs = [q for q in st["questions"] if not q["answered"]]
     if qs:
@@ -836,8 +901,9 @@ def main(argv=None):
     s.add_argument("question")
     s.add_argument("--hours", type=float)
     s.add_argument("--usd", type=float)
-    s.add_argument("--kill", action="append", help="kill criterion (repeatable)")
-    s.add_argument("--direction", help="first direction (default: the question)")
+    s.add_argument("--kill", action="append", help="kill criterion, fixed before the build (repeatable)")
+    s.add_argument("--keep", action="append", help="keep criterion: what would make the answer yes (repeatable)")
+    s.add_argument("--direction", help="first direction (default: the question; pick the one most likely to kill the idea)")
     s.add_argument("--slug")
     s.add_argument("--worktree", action="store_true", help="work in a new worktree instead of a branch in place")
     s.add_argument("--no-branch", action="store_true")
@@ -859,7 +925,10 @@ def main(argv=None):
     s = sub.add_parser("decide", help="record a decision with its provenance")
     s.add_argument("text")
     s.add_argument("--by", choices=["operator", "code", "open"], required=True)
-    s.add_argument("--evidence", help="pointer: file:line, commit, transcript line, URL")
+    s.add_argument("--evidence", help="pointer: file:line, commit, transcript line, URL; for --by operator, the quoted words or the transcript")
+    s.add_argument("--proof", choices=["proved", "inferred"], help="--by code only: proved = observed in this scout (output, measurement, file:line); inferred = reasoned from elsewhere (default)")
+    s.add_argument("--ask", help="--by open only: the question to put to the operator at the next boundary")
+    s.add_argument("--supersedes", type=lambda v: [x.strip() for x in v.split(",") if x.strip()], help="D1,D2: decisions this one replaces")
     s.add_argument("--scout")
     s.set_defaults(fn=cmd_decide)
 
@@ -877,7 +946,10 @@ def main(argv=None):
     s.set_defaults(fn=cmd_pivot)
 
     s = sub.add_parser("close", help="kill or commit")
-    s.add_argument("--outcome", choices=["kill", "commit"], required=True)
+    s.add_argument("--outcome", choices=["kill", "commit"], required=True, help="what happens to the work")
+    s.add_argument("--verdict", choices=["proven", "disproven", "conditional", "unanswered"], help="what happened to the question")
+    s.add_argument("--verdict-note", help="for conditional: the thing held fixed; for disproven: why the wall is structural")
+    s.add_argument("--unknown", action="append", help="what this scout did not settle (repeatable)")
     s.add_argument("--tried")
     s.add_argument("--learned")
     s.add_argument("--thrown-away")
@@ -893,7 +965,8 @@ def main(argv=None):
     s.add_argument("--scout")
     s.set_defaults(fn=cmd_prereg)
 
-    s = sub.add_parser("handoff", help="write handoff.md")
+    s = sub.add_parser("handoff", help="write handoff.md (refuses if a decision, direction, branch or question would be dropped)")
+    s.add_argument("--no-check", action="store_true")
     s.add_argument("--scout")
     s.add_argument("--print", action="store_true")
     s.set_defaults(fn=cmd_handoff)

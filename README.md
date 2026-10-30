@@ -6,9 +6,13 @@ criteria, and an ordered list of directions. Decisions are written when a direct
 recovered from the code and the transcript, and handed over as one plain markdown file
 that any spec-driven or scored track can read.
 
-Every workflow framework we found assumes the decisions come first: spec, interview,
-record, then build. That is right for a ticket an unattended agent builds and wrong for
-exploratory work. This plugin fills the gap and hands over cleanly.
+Spec-first frameworks assume the decisions come first: spec, interview, record, then build.
+That is right for a ticket an unattended agent builds and wrong for exploratory work. Several
+of them ship a spike mode, and a few tools reject the up-front spec outright (see Prior art);
+all of them run one question to one verdict and feed a spec. None runs exploration as a boxed,
+multi-pivot loop whose decisions are recovered afterwards with provenance and handed, in a
+tool-neutral file, to whatever spec-driven or scored track a team already uses. That seam is
+what this plugin occupies.
 
 ## Install
 
@@ -42,7 +46,7 @@ else: no tracker, no pipeline, no project layout.
 | `/scout:note <text>` | append to the log |
 | `/scout:variants <n> [question]` | 2 to 4 arms of one question in separate worktrees, each a capped `claude -p` on Opus, compared as evidence |
 | `/scout:pivot <new direction>` | close the current direction with what it taught, mark superseded decisions, open the next; the common path |
-| `/scout:close kill\|commit` | recover decisions from the diff and the transcript, tag each operator / code / open, write tried / learned / thrown away |
+| `/scout:close kill\|commit` | recover decisions from the diff and the transcript, tag each operator / code (proved or inferred) / open, give the question a verdict (proven / disproven / conditional / unanswered), write tried / learned / thrown away / still unknown |
 | `/scout:handoff` | write `handoff.md`: decisions with provenance, open questions, pointers, pre-registration when a question became measurable |
 | `/scout:status` | scouts, directions, boxes spent, open decisions |
 
@@ -78,11 +82,43 @@ The first three scouts run through the plugin were scouts about the plugin:
 `scouting/handoff-format/`, `scouting/pivot-mechanics/`, `scouting/variants-command/`. Each has its
 log, decisions and handoff.
 
+## Prior art
+
+Found by a research sweep on 2026-10-30 (`docs/prior-art.md` has the full table, what each covers
+and lacks, and what was borrowed). The closest, strongest first:
+
+- [spikekit](https://github.com/gongxh13/spikekit): the same thesis, an explicit rejection of
+  design-then-build, parked "not the model's call" items; no box, pivots, provenance or variants.
+- [prp-spike](https://github.com/Wirasm/prp/blob/main/.agents/skills/prp-spike/SKILL.md): kill criteria
+  frozen before the build, `proved`/`inferred` labels, PROVEN/DISPROVEN/CONDITIONAL verdicts, a
+  "still unknown" list; one question, one direction, no pivot or dollar box. The evidence rules here
+  are borrowed from it.
+- [GSD `/gsd:spike`](https://github.com/open-gsd/gsd-core): risk-ordered experiments with a
+  Continue/Pivot/Abandon checkpoint and a wrap-up into planning; asks mid-build, no box or provenance.
+- [hordev](https://github.com/heffrey/hordev): `racing-prototypes` (2 to 4 candidates, own worktree
+  each, criteria before the race, losers kept until the human has seen them) and an assumption ledger;
+  the fair-race rules in `/scout:variants` are borrowed from it.
+- [mattpocock/skills](https://github.com/mattpocock/skills) `/prototype` + `/handoff`: throwaway code
+  that answers a question, a handoff that references by path and never copies.
+- [Continuity](https://github.com/vikcena01/ai-continuity-plugin): decisions with `supersedes` /
+  `superseded_by` and the reason, re-injected on the compaction hook.
+- [why-log](https://github.com/oh-namgyu/why-log): decisions recovered from history with a provenance
+  label (stated, inferred, testimony); the rule that an operator decision needs a verbatim quote is
+  borrowed from it.
+- [agent-lab-kit](https://github.com/Campanadas/agent-lab-kit): `prereg` before the scored run, and a
+  cover check that refuses a handoff that dropped something; both borrowed.
+
+What is specific to scout-ahead: the dollar box metered from capped spawns, parking questions to a
+boundary and printing them there, close-time recovery tagged operator / code / open with pointers,
+supersession marked at the pivot, and a handoff that states its provenance mapping so a spec tool
+does not re-ask settled decisions.
+
 ## Docs
 
 - `docs/protocol.md` — the loop and the rules
 - `docs/handoff-format.md` — the handoff file and how a spec-driven tool reads it
 - `docs/measured.md` — what was measured and what was not
+- `docs/prior-art.md` — the prior-art sweep, feature-by-feature bearings, and what was borrowed
 - `DESIGN.md` — the one-page design and the defaults that were not grounded in the brief
 
 MIT.

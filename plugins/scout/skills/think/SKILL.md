@@ -33,10 +33,10 @@ Read `scouting/<slug>/log.md` first if it is not already in context (the open sc
 Only when the operator says "record this" (or an unmistakable equivalent):
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scout.py" decide "<the decision in the operator's words>" --by operator --evidence "<pointer>"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scout.py" decide "<the decision in the operator's words>" --by operator --evidence "<their words, quoted>"
 ```
 
-`--by code` is for decisions the code settled (a constraint you found, with the file:line). `--by open` is for something that must be decided later. Never record a decision because you think one was made; the operator says so, or it is recovered at the close.
+`--evidence` for an operator decision is their words, quoted, or a transcript pointer; the script refuses an operator decision without one. `--by code --proof proved|inferred` is for decisions the code settled: `proved` when this scout observed it (a command's output, a measurement, a file:line read), `inferred` when it is reasoning from elsewhere. `--by open --ask "<question>"` is for something that must be decided later, with the question to put to the operator. A decision that replaces an earlier one takes `--supersedes D1`; the old one stays as history. Never record a decision because you think one was made; the operator says so, or it is recovered at the close.
 
 ## When the direction is spent
 

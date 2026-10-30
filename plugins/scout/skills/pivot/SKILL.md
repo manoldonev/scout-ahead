@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 Close the current direction with what it taught, mark the decisions it reversed, open the next direction in the same scout.
 
-1. Write the learned line yourself, one or two sentences, from what actually happened (the log, the diff, the failed run). Name the decision ids the new direction reverses, if any (`decisions.md`).
+1. Write the learned line yourself, one or two sentences, from what actually happened (the log, the diff, the failed run). Re-read the kill and keep criteria before writing it, not after: they were written by someone who had not seen these results. Name the decision ids the new direction reverses, if any (`decisions.md`); a direction-level supersession marks them `superseded by: direction N`, and a replacement decision recorded later with `decide --supersedes D1` marks them by id.
 2. Run:
 
    ```
