@@ -275,6 +275,8 @@ def render_handoff(st):
     if not st["decisions"]:
         L.append("| | (none recorded) | | | |")
     L.append("")
+    L.append("settled by: operator = the operator said it (maps to a ledger's user-answered); code = the code or a measurement forced it (codebase-derived); open = nobody settled it (deferred).")
+    L.append("")
     L.append("## Open questions")
     L.append("")
     opens = [d for d in open_decisions(st)] 

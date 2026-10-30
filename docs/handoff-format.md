@@ -24,7 +24,7 @@ The version marker in the HTML comment lets a reader detect the shape without pa
 
 ## Fields
 
-- **Decisions.** `settled by` is one of `operator`, `code`, `open`. `evidence` is a
+- **Decisions.** `settled by` is one of `operator`, `code`, `open`. The file states the mapping onto ledger-style vocabularies itself (`user-answered`, `codebase-derived`, `deferred`), so a reader with a closed provenance enum needs no plugin knowledge. `evidence` is a
   pointer: a file:line, a commit, a transcript path, the operator's quoted words. A
   superseded decision stays in the table with `superseded by: direction N`; the reader
   treats it as history, not as a constraint.
