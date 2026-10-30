@@ -1,0 +1,799 @@
+{
+ "shortlist": [
+  {
+   "mechanic": "Every stub or fake is recorded while it is made, and each one is re-read against the hypothesis before the verdict, because mocks drift toward whatever was hard.",
+   "source_pointer": "Wirasm/prp .agents/skills/prp-spike/SKILL.md, Phase 4 'Track what got faked'; references/evidence.md, Traps 'The stub that hid the hard part'; templates/spike-report.md, 'Limits of this result' > Stubbed",
+   "quote": "Track what got faked. Every stub is a hole in the proof; the report has to name them. / Mocks migrate toward whatever was difficult. Re-read every stub against the hypothesis before concluding.",
+   "scout_ahead_today": "Stubs are named only after the fact, as free text in `close --unknown` (scripts/scout.py cmd_close; skills/close/SKILL.md step 4 says 'the parts stubbed'). Nothing records a stub when it is made, so a stub made in direction 1 is lost across a pivot or a compaction unless someone happens to remember it at the close.",
+   "proposed_change": "scripts/scout.py: add a `stub <text>` subcommand that appends {text, at, direction} to st['stubs'] and logs a 'stub' entry. render_log lists the stubs per direction, render_handoff lists them under '## Still unknown' as 'stubbed: \u2026', context_text re-injects the open ones, and cover_gaps refuses a handoff that drops one. skills/think/SKILL.md gets one line: when you fake a part, `scout stub \"<what, and what it hides>\"`. skills/close/SKILL.md step 2 gets one line: re-read every stub against the question before choosing the verdict; a stub that covered the question itself makes the verdict `unanswered`.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "Wirasm/prp .agents/skills/prp-spike/SKILL.md, Phase 4 'Track what got faked'; references/evidence.md, Traps 'The stub that hid the hard part'; templates/spike-report.md, 'Limits of this result' > Stubbed"
+   ]
+  },
+  {
+   "mechanic": "A CONDITIONAL verdict is priced in fixed fields: what must change, the evidence that it is the obstacle, the blast radius, what else it unlocks, and the cheaper option that was tried. A DISPROVEN verdict must name a structural wall.",
+   "source_pointer": "Wirasm/prp templates/spike-report.md '## Conditional constraints'; references/framing.md 'Constraint questions'; SKILL.md Phase 6 verdict table",
+   "quote": "**What must change** \u2026 **Evidence it is the obstacle** \u2026 **Blast radius** \u2026 **Also unlocks** \u2026 **Cheaper option tried** / A constraint spike that reports \"we should change C\" without blast radius has done half the work.",
+   "scout_ahead_today": "`close --verdict conditional` takes an optional free-text `--verdict-note` (scripts/scout.py cmd_close, rendered as one line in render_handoff Status). Nothing refuses a conditional or disproven verdict that has no note, and there are no fields for blast radius, unlocks or the cheaper option, even though docs/handoff-format.md says conditional is 'a priced decision that needs a decision-maker'.",
+   "proposed_change": "scripts/scout.py cmd_close: refuse `--verdict conditional` without `--constraint`, and refuse `--verdict disproven` without `--verdict-note` (the wall). Add the optional `--blast-radius`, `--unlocks` and `--cheaper-option` flags, stored in st['close']. render_handoff adds a '## Conditional constraint' section only when the verdict is conditional, which is additive to handoff v1. skills/close/SKILL.md gets one paragraph on the two jobs of a constraint question: show the wall under C, then show that relaxing C helps, trying the reversible option (a flag, an adapter) first.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "Wirasm/prp templates/spike-report.md '## Conditional constraints'; references/framing.md 'Constraint questions'; SKILL.md Phase 6 verdict table"
+   ]
+  },
+  {
+   "mechanic": "At the verdict, report which pre-committed criteria fired. A criterion that named the wrong observation point is honoured as written, never widened, and the missed point is reported as a separate finding.",
+   "source_pointer": "Wirasm/prp references/evidence.md 'Record the seat every verdict was proved from' (second bullet); templates/spike-report.md, the Phase 6 note under Verdict boundaries",
+   "quote": "Honour it exactly as written, report that it fired at the level it named, and report the missed seat as a separate finding. The gap in the criterion is itself a result. / In Phase 6: which kill criteria fired, or that none did.",
+   "scout_ahead_today": "Kill and keep criteria are recorded at start and re-read before pivot and close (skills/pivot, skills/close step 4). The close records no outcome per criterion, so a reader of handoff.md cannot check the verdict against the pre-commitment.",
+   "proposed_change": "scripts/scout.py: number the criteria in render_log and render_handoff (K1.., P1.. for keep). cmd_close takes a repeatable `--fired K2` and renders each criterion in the handoff Status as 'fired' or 'did not fire'. Without --fired, the line reads 'none fired'. skills/close/SKILL.md gets one sentence: a criterion that turned out to name the wrong observation point is left exactly as written; the gap goes in `--unknown` as its own finding.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "Wirasm/prp references/evidence.md 'Record the seat every verdict was proved from' (second bullet); templates/spike-report.md, the Phase 6 note under Verdict boundaries"
+   ]
+  },
+  {
+   "mechanic": "Before a pointer counts as evidence, check that it resolves: a named branch must exist and carry a commit. A pointer into a machine-local store is labelled unfollowable for anyone else.",
+   "source_pointer": "Wirasm/prp SKILL.md Phase 7 'Verify the Evidence pointer before calling the report done'; references/handoff.md 'Making the evidence followable'",
+   "quote": "A named branch must exist and carry a commit; otherwise point at the store directory. Evidence that cannot be followed is a claim, not a result. / `$PRP_DIR` is **local-only**. A path into it is unfollowable by anyone but the operator",
+   "scout_ahead_today": "cover_gaps (scripts/scout.py) checks only that branch names appear in the handoff text. Resolution is a manual instruction in skills/handoff/SKILL.md step 3 ('git rev-parse the commits'). Transcript paths under ~/.claude/projects and unpushed scout/arm branches are rendered as ordinary pointers, with no mark that another reader cannot follow them.",
+   "proposed_change": "scripts/scout.py cmd_handoff: for the scout branch and each arm branch, run `git rev-parse --verify`, and for the scout branch check `git rev-list --count base..branch > 0`. A missing branch is a refusal, like cover_gaps. render_handoff suffixes a branch with no upstream (`git rev-parse --abbrev-ref <b>@{u}` fails) with '(not pushed)', and each transcript path with '(local to this machine)'. A missing transcript file renders '(missing)'.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "Wirasm/prp SKILL.md Phase 7 'Verify the Evidence pointer before calling the report done'; references/handoff.md 'Making the evidence followable'"
+   ]
+  },
+  {
+   "mechanic": "Each variant is a named design bet, not a re-roll: the bet one arm tests is stated up front and the arms differ by bet.",
+   "source_pointer": "hashintel/brunch .agents/skills/ln-prototype/SKILL.md, 'UI prototype' section",
+   "quote": "Variants should differ by design bet, not skin: name the bet each variant tests.",
+   "scout_ahead_today": "skills/variants/SKILL.md step 1 says arms 'must differ on one axis', but scripts/scout.py cmd_variants/_run_arm fill VARIANT_PROMPT with the same question for every arm, so arms can differ only by sampling. Nothing records which axis or bet each arm took.",
+   "proposed_change": "scout.py variants: add a repeatable `--bet \"<bet>\"`. When given, it must appear exactly n times. Arm i's prompt gets one line, 'Your bet: <bet i>; build the version that tests it', and is never shown the other arms' bets. Store `bet` on each arm in state, add a bet column to the run table in render_log and the printed table, and put it in the arm's handoff Pointers line. Omitting --bet keeps today's best-of-N behavior. variants SKILL step 1: write the bets together with the criteria before launching.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "hashintel/brunch .agents/skills/ln-prototype/SKILL.md, 'UI prototype' section"
+   ]
+  },
+  {
+   "mechanic": "Unit-of-record smell checks before adding a decision row, so the record holds spine choices between live alternatives and leaves out implementation mechanics.",
+   "source_pointer": "hashintel/brunch .agents/skills/ln-spec/SKILL.md, 'Weight management' (units of record + smell checks)",
+   "quote": "Decision = one committed spine choice between alternatives at one seam. / The item would stop making sense once the code ships and no alternative remains live \u2192 probably not a tracked decision",
+   "scout_ahead_today": "skills/close/SKILL.md step 2 says 'Walk the diff and the utterances and record each one you find that is not already in decisions.md'. Nothing stops helper names, file layout or steps under an already-recorded decision from flooding the Decisions table that docs/handoff-format.md treats as the downstream interview.",
+   "proposed_change": "close SKILL step 2 (and the 'Recording a decision' section of think SKILL): add one paragraph. A decision is one choice between alternatives that were live at one seam. Do not record helper names, file layout, an implementation step under a decision already recorded, or anything that would stop making sense once the code ships. New evidence or a changed confidence on an existing decision is a `--supersedes`, not a new row. When unsure, leave it out.",
+   "kind": "skill-text",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "hashintel/brunch .agents/skills/ln-spec/SKILL.md, 'Weight management' (units of record + smell checks)"
+   ]
+  },
+  {
+   "mechanic": "The evidence that turned a direction is kept with the conclusion, so a successor inherits the reasoning and not only the verdict.",
+   "source_pointer": "hashintel/brunch .agents/skills/ln-handoff/SKILL.md step 2 'Evidence that informed diagnoses'; assets/handoff-template.md '### Diagnostic evidence'",
+   "quote": "concrete proof points ... that caused the investigation to shift direction ... Without this, a new thread inherits conclusions but not the reasoning, and may re-investigate or contradict settled evidence.",
+   "scout_ahead_today": "scout.py cmd_pivot stores only `learned` (one or two sentences) on the closed direction. Decisions carry evidence, but the pivot itself has no evidence pointer. render_log and the handoff Pointers list each direction with timestamps only.",
+   "proposed_change": "scout.py pivot: add `--evidence \"<pointer: command and its output, file:line, commit>\"`, stored on the closed direction. Print it after 'Learned:' in render_log, and render the handoff Pointers line as 'direction N: <text> (\u2026 closed \u2026; turned on: <evidence>)'. pivot SKILL step 1: name the observation that ended the direction. close takes the same flag for the last direction.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "hashintel/brunch .agents/skills/ln-handoff/SKILL.md step 2 'Evidence that informed diagnoses'; assets/handoff-template.md '### Diagnostic evidence'"
+   ]
+  },
+  {
+   "mechanic": "Each variant is told which structurally different approach it takes, and when two drafts come out too similar, one is rerun with explicit \"do not use X\" guidance.",
+   "source_pointer": "mattpocock/skills skills/engineering/prototype/UI.md, \"### 2. Generate radically different variants\" (about lines 47-55) and the Anti-patterns list",
+   "quote": "Variants must be **structurally different**: different layout, different information hierarchy, different primary affordance, not just different colours. ... If two drafts come out too similar, redo one with explicit \"do not use a card grid\" guidance.",
+   "scout_ahead_today": "skills/variants/SKILL.md step 1 says the arms must differ on one axis, but scripts/scout.py cmd_variants takes a single question and VARIANT_PROMPT gives every arm the same text apart from the arm number. scouting/variants-command/variants/run-4/v1 and v2 prompt.md differ only in 'v1'/'v2' and the branch name. The one-axis rule cannot be expressed, so arms differ only by sampling, and nothing detects arms that converged.",
+   "proposed_change": "scout.py variants: add a repeatable `--arm \"<this arm's position on the axis>\"`. When it is given, n equals the number of --arm flags (2 to 4 still enforced), and VARIANT_PROMPT gets the line 'Your approach: {arm}. The other arms take different positions on the same axis; do not converge on a middle ground.' Record `axis` per arm in state and render it as a column in the log's variants table. After _finish_arm, if two committed arms changed the same file set (compare their diff.stat file lists), print 'arms vX and vY touched the same files; check whether they converged before comparing'. The script stops at that print and reruns nothing. variants/SKILL.md step 1: write one --arm per position. The rerun-with-exclusion step stays an operator call, so no arm's draft reaches another arm.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "mattpocock/skills skills/engineering/prototype/UI.md, \"### 2. Generate radically different variants\" (about lines 47-55) and the Anti-patterns list"
+   ]
+  },
+  {
+   "mechanic": "Text that must arrive verbatim goes to the next process as a file, never interpolated into a shell command, because backticks and $(...) get mangled silently.",
+   "source_pointer": "mattpocock/skills docs/productivity/handoff.md, \"How do I actually hand it to the next agent?\" (about line 51); skills/in-progress/claude-handoff/SKILL.md line 10",
+   "quote": "Point at the file rather than pasting the summary into a shell command. The shell mangles a summary that contains backticks or `$(...)` ... The usual result is silent truncation rather than an error",
+   "scout_ahead_today": "skills/note/SKILL.md runs `scout.py note \"$ARGUMENTS\"`. think/close/start/pivot interpolate operator text into double-quoted shell args: `decide \"<...>\" --by operator --evidence \"<their words, quoted>\"`, `question`, `pivot --learned`, `close --learned/--tried/...`. scout.py reads every text value only from argv; nothing takes stdin or a file. An operator quote containing `$`, backticks or a double quote is expanded or truncated, and it is stored as evidence for an operator decision, whose whole value is being verbatim.",
+   "proposed_change": "scout.py: accept `-` for the positional text of note/question/decide and for --evidence/--learned/--verdict-note (read from stdin), with a small helper `_text(v)` that returns sys.stdin.read().rstrip('\\n') when v == '-'. Skills note/think/close: pass operator-verbatim text through a quoted heredoc (`... decide - --by operator --evidence - <<'EOF'` is two stdins, so use `--evidence-file <path>` or make --evidence the stdin one); the simplest version is `--evidence -` plus decision text in argv. One line in think/SKILL.md: operator words go through stdin with a quoted heredoc, never inside double quotes.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "mattpocock/skills docs/productivity/handoff.md, \"How do I actually hand it to the next agent?\" (about line 51); skills/in-progress/claude-handoff/SKILL.md line 10"
+   ]
+  },
+  {
+   "mechanic": "The prototype branch is kept as a primary source and never merged; only the validated decision enters main, rewritten under normal rules.",
+   "source_pointer": "mattpocock/skills skills/engineering/prototype/SKILL.md rule 6 (line 27); UI.md Anti-patterns \"Promoting the prototype directly to production\"; docs/engineering/prototype.md \"The prototype is a primary source\"",
+   "quote": "commit it to a throwaway branch, out of main, and leave a context pointer to that branch ... The main branch keeps only the validated decision. / The variant code was written under prototype constraints (no tests, minimal error handling). Rewrite it properly when you fold it in.",
+   "scout_ahead_today": "skills/close/SKILL.md defines `--outcome commit` as 'carries the branch forward', which reads like 'merge the scout branch'. Nothing in close, handoff, docs/handoff-format.md or render_handoff says the scout branch is evidence that must not be merged, or that what it proved is rebuilt under the receiving track's rules. gamedev's keep criteria were borrowed, but not its 'keep authorizes a REWRITE'.",
+   "proposed_change": "close/SKILL.md step 4: `commit` carries the decisions and the branch forward as evidence; the branch is never merged, and the receiving track rebuilds what it proved under its own rules (tests, error handling). render_handoff Pointers: one fixed line under the branch, '`scout/<slug>` is evidence: re-run it, cite it, never merge it.' docs/handoff-format.md 'How a spec-driven tool reads it': one bullet saying the same.",
+   "kind": "skill-text",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "mattpocock/skills skills/engineering/prototype/SKILL.md rule 6 (line 27); UI.md Anti-patterns \"Promoting the prototype directly to production\"; docs/engineering/prototype.md \"The prototype is a primary source\""
+   ]
+  },
+  {
+   "mechanic": "The handoff that the next session starts from carries a fixed 'Failed (do not retry)' section, and every line in it cites a finding or a commit, so a session after compaction does not rerun a dead path.",
+   "source_pointer": "Campanadas/agent-lab-kit labkit/templates/HANDOFF.md (section '## Failed (do not retry)'); labkit/templates/claude/skills/handoff/SKILL.md step 1",
+   "quote": "## Failed (do not retry)\n- Every line cites `#N` or a commit.",
+   "scout_ahead_today": "plugins/scout/scripts/scout.py context_text() re-injects only the current direction (cur_direction) and its last 5 entries. Closed directions and their learned lines are not in the SessionStart payload, so after a compaction in direction 3 the model cannot see that directions 1 and 2 failed, or why.",
+   "proposed_change": "In context_text(), before 'Current direction', add one line per closed direction: 'Closed directions (do not retry without new evidence): 1. <text> (closed by pivot at <commit[:12]>): <learned>'. Use the per-direction commit from the pivot candidate below when it exists. Add an assertion to tests/test_scout.py that the hook output contains direction 1's learned line after a pivot.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "Campanadas/agent-lab-kit labkit/templates/HANDOFF.md (section '## Failed (do not retry)'); labkit/templates/claude/skills/handoff/SKILL.md step 1"
+   ]
+  },
+  {
+   "mechanic": "Pre-registration is refused unless it states a floor: what a dead, flat or trivial result would score, so the test can fail. A test that passes vacuously is reported as 'passed as written, not counted'.",
+   "source_pointer": "Campanadas/agent-lab-kit labkit/cli.py:263-266 (cmd_prereg, prereg_require_floor); PLAYBOOK.md rule 8; templates/claude/skills/prereg/SKILL.md section 2",
+   "quote": "no floor: say what a dead, flat or trivial result would score, so the test can fail\nA test that passes vacuously is reported as \"passed as written, not counted\", and its floor is added from then on.",
+   "scout_ahead_today": "scripts/scout.py cmd_prereg takes --question/--arms/--runs/--pass-rule/--cost-usd and has no floor field. skills/variants/SKILL.md step 1 says to write criteria 'observable from running the arms' but never asks what an arm that did nothing would score.",
+   "proposed_change": "scout.py: add a required `--floor \"<what a do-nothing or trivial arm scores under the pass rule, and why that fails it>\"` to `prereg`. Store it in st['prereg'] and render it as '- floor: \u2026' in the Pre-registration block, and document it in docs/handoff-format.md Fields. skills/variants/SKILL.md step 1: add one sentence: 'For each criterion, say what an arm that changed nothing would score; a criterion it would pass is not a criterion.'",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "Campanadas/agent-lab-kit labkit/cli.py:263-266 (cmd_prereg, prereg_require_floor); PLAYBOOK.md rule 8; templates/claude/skills/prereg/SKILL.md section 2"
+   ]
+  },
+  {
+   "mechanic": "The tool refuses to bless predictions that were not written down and frozen before the run, and it records where they were frozen.",
+   "source_pointer": "Campanadas/agent-lab-kit labkit/cli.py:260-273 (cmd_prereg); templates/claude/skills/prereg/SKILL.md section 3",
+   "quote": "Write what you expect (tests, pass floors, predicted outcome) in the header, commit it, then run.\n'%s: pre-registered at %s. Cite this commit in the finding.'",
+   "scout_ahead_today": "skills/variants/SKILL.md step 1 tells the model to write comparison criteria before launching, but scripts/scout.py cmd_variants has no flag for them. The run record (st['variants'][i]) and the rendered Variants table carry no criteria, so nothing shows whether criteria existed before the arms ran.",
+   "proposed_change": "scout.py cmd_variants: add a repeatable `--criterion \"<observable check>\"` that is required unless --dry-run. Store the list in the run record before any arm is spawned, print it in --dry-run, and render it under 'Run <id>' in render_log() as 'Criteria (fixed before launch): \u2026'. Change the variants skill step 2 command line to pass them.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "Campanadas/agent-lab-kit labkit/cli.py:260-273 (cmd_prereg); templates/claude/skills/prereg/SKILL.md section 3"
+   ]
+  },
+  {
+   "mechanic": "A passing check counts as evidence only after it has been shown it can fail: delete the mechanism and re-run. A result that survives without the mechanism was not testing it.",
+   "source_pointer": "Campanadas/agent-lab-kit labkit/templates/claude/skills/claim-guard/SKILL.md section 1; templates/CLAUDE.md 'Rules of evidence'",
+   "quote": "ASSUME A PASSING CHECK IS UNINFORMATIVE UNTIL YOU HAVE SHOWN IT CAN FAIL.\n**Delete the mechanism and re-run.** If the result survives without the thing that supposedly produces it, the test was not testing it",
+   "scout_ahead_today": "skills/close/SKILL.md step 2 and skills/think/SKILL.md define `proved` as 'this scout observed it (a command's output, a measurement, a file:line read)'. A passing test run counts as proved even if it would also pass with the change reverted.",
+   "proposed_change": "skills/close/SKILL.md step 2 (and the matching sentence in think/SKILL.md): add 'A passing check proves a decision only if you have seen it fail without the change (revert or stub the mechanism and re-run); otherwise record it `inferred`, and put the revert run in --evidence when you have it.' docs/protocol.md rule 4 gets the same clause.",
+   "kind": "skill-text",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "Campanadas/agent-lab-kit labkit/templates/claude/skills/claim-guard/SKILL.md section 1; templates/CLAUDE.md 'Rules of evidence'"
+   ]
+  },
+  {
+   "mechanic": "Each race candidate is told which approach it is building: the candidates differ on one named axis, and the prompts are otherwise identical except for the candidate's identity.",
+   "source_pointer": "heffrey/hordev skills/racing-prototypes/SKILL.md lines 20-40 (Choosing Candidates, Isolation)",
+   "quote": "They must differ on the ONE axis in question; everything else stays the same. ... Dispatch candidates as parallel agents with identical prompts that name only their candidate identity and the shared spec path.",
+   "scout_ahead_today": "skills/variants/SKILL.md step 1 says \"the arms must differ on one axis\", but scripts/scout.py cmd_variants/_run_arm give every arm the same VARIANT_PROMPT with the same question, and there is no way to tell v1 to build approach A and v2 approach B. The arms differ only by sampling. scouting/variants-command/variants/run-4/v1/prompt.md and v2 are word-for-word the same apart from the arm number and branch.",
+   "proposed_change": "scripts/scout.py: `variants` takes a repeatable `--arm \"<approach>\"`. When it is given, n is the number of arms (still 2-4) and n can be left out. VARIANT_PROMPT gets a line `Your approach: {approach}. The other arms take a different approach on the same axis; everything else stays the same.`, and also a `--same \"<what stays fixed>\"` line that every arm gets. Store `approach` on each arm in state, add an `approach` column to the variants table in render_log and to the handoff pointer line. With no --arm, behavior is unchanged (n samples), and the table says `sampled`. Update the variants SKILL.md step 2 example. Add a test: two --arm values reach the two prompt.md files.",
+   "kind": "script",
+   "value": "high",
+   "cost": "medium",
+   "sources": [
+    "heffrey/hordev skills/racing-prototypes/SKILL.md lines 20-40 (Choosing Candidates, Isolation)"
+   ]
+  },
+  {
+   "mechanic": "One acceptance check is written once, run against every candidate, and re-run by the orchestrator itself. The candidate's report of passing counts only as a claim.",
+   "source_pointer": "heffrey/hordev skills/racing-prototypes/SKILL.md line 31 (Fair-Race Rules) and lines 44-52 (Judging); skills/dispatching-hordes/SKILL.md lines 76-88 (item 5, expanded); skills/horde-status/SKILL.md lines 131-139 (Corroborate against the tree)",
+   "quote": "Acceptance tests: Same test suite. Write them once, run all candidates against them. / `horde-qa` then re-runs *that* command, not whichever one came back in the report.",
+   "scout_ahead_today": "skills/variants/SKILL.md asks for criteria \"observable from running the arms\", but nothing runs them. scripts/scout.py _finish_arm records only the CLI's own result subtype (\"success\" means the process ended, not that the arm answered anything) along with cost, turns and the file count. The model then compares the arms by reading VARIANT.md, which is each arm's self-report.",
+   "proposed_change": "scripts/scout.py: `variants --check \"<cmd>\"` (repeatable). The command text goes into each arm's prompt (\"this is how you will be judged\"). After an arm finishes and the harness commits, the harness runs each check with cwd set to that arm's worktree under a timeout, then stores exit code and the last 20 lines in `variants/run-<id>/v<i>/check-<k>.txt` and in state. The table gets one pass/fail column per check, and the `status` column is renamed `exit` so \"success\" is not read as \"answered\". Add one sentence to skills/variants/SKILL.md step 3: VARIANT.md is a claim; a criterion counts only from the harness's check output, and when they disagree, report the check and say what the arm claimed.",
+   "kind": "script",
+   "value": "high",
+   "cost": "medium",
+   "sources": [
+    "heffrey/hordev skills/racing-prototypes/SKILL.md line 31 (Fair-Race Rules) and lines 44-52 (Judging); skills/dispatching-hordes/SKILL.md lines 76-88 (item 5, expanded); skills/horde-status/SKILL.md lines 131-139 (Corroborate against the tree)"
+   ]
+  },
+  {
+   "mechanic": "A question the agent does not ask carries the default it is proceeding on, stated when the question is set aside, so the build continues on a stated bet instead of an unrecorded guess.",
+   "source_pointer": "heffrey/hordev skills/rapid-spec/SKILL.md line 42 (Never block on an answer); skills/assumption-ledger/SKILL.md opening (The Trade)",
+   "quote": "If you do ask, state the default you are proceeding with in the same breath, then start building against it. / An undocumented guess is a bug; a logged assumption is a design decision.",
+   "scout_ahead_today": "scripts/scout.py cmd_question stores only the question text. skills/think/SKILL.md and skills/start/SKILL.md park questions, but the default the model then picks and builds on is recorded nowhere until the close, when skills/close/SKILL.md tries to recover it from the diff.",
+   "proposed_change": "scripts/scout.py: `question \"<q>\" --assuming \"<the default being built on>\"`. Store it on the question, render it in log.md as `- [ ] <q> (building on: <x>)`, print it in the pivot boundary list and in context_text, and list it under the handoff's Open questions. No decision is written, so rule 4 is untouched. The close's recover step lists unanswered questions that carry an assumption as candidates for `decide --by code --proof inferred` or `--by open`. In think/SKILL.md and start/SKILL.md, change the parking example to always pass --assuming when work continues on a default.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "heffrey/hordev skills/rapid-spec/SKILL.md line 42 (Never block on an answer); skills/assumption-ledger/SKILL.md opening (The Trade)"
+   ]
+  },
+  {
+   "mechanic": "A negative control: each critical claim names the observation that would differ if the claim were false, and that observation is checked. A check whose result is the same either way proves nothing. Each assumption carries a \"Falsified by\" field.",
+   "source_pointer": "heffrey/hordev skills/horde-qa/SKILL.md line 127 (Name the negative control); skills/assumption-ledger/SKILL.md line 40 (Falsified by field)",
+   "quote": "Name the negative control. For each critical claim, write down the observation that would differ if the feature were broken, and check that one. \"No errors\" is never it. / Falsified by: How you will know this is wrong.",
+   "scout_ahead_today": "scripts/scout.py cmd_decide takes --proof proved|inferred and one --evidence pointer. skills/close/SKILL.md step 2 says \"re-run the inferred ones\" but does not name the experiment, and nothing stops a `proved` label resting on an observation that would look the same if the claim were false (for example, no error printed).",
+   "proposed_change": "scripts/scout.py: `decide --by code --falsify \"<the observation that would differ if this were wrong>\"`, rendered as `- falsified by:` in decisions.md and as a column in the handoff Decisions table. skills/close/SKILL.md step 2 and skills/think/SKILL.md: before marking `proved`, write the falsifying observation and check that one. If the result would be the same whether the claim holds or not, record it `inferred`. The inferred re-run at close runs each recorded --falsify. Optional: the script refuses `--proof proved` without --falsify.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "heffrey/hordev skills/horde-qa/SKILL.md line 127 (Name the negative control); skills/assumption-ledger/SKILL.md line 40 (Falsified by field)"
+   ]
+  },
+  {
+   "mechanic": "Before the design depends on a capability that the platform grants rather than the code provides (an entitlement, a key, a paid tier, a toolchain version), probe it with one command. Start any slow build against the unchanged tree at once, so toolchain failures surface early.",
+   "source_pointer": "heffrey/hordev skills/rapid-spec/SKILL.md lines 59-73 (Probe Platform Gates Before the Spec Depends on Them)",
+   "quote": "A capability the platform grants rather than the code provides is checked on the user's account and machine while you write the spec, not after dispatch ... Checking is usually one command.",
+   "scout_ahead_today": "skills/start/SKILL.md step 2 reads files, greps callers and runs existing tests if they are cheap. It never checks the external gates the question rests on, which are often the cheapest kill observation.",
+   "proposed_change": "Add one paragraph to skills/start/SKILL.md step 2: list the gates the question depends on (credentials, entitlements, quotas, toolchain or runtime versions, a service being reachable) and probe each with one command now. Record each result as `note \"gate: <x>: <command> -> <result>\"`. A missing gate either hits a kill criterion or becomes the first direction, and it is never a parked question unless every fallback ends the scout. If the stack has a slow build, start it in the background against the unchanged tree.",
+   "kind": "skill-text",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "heffrey/hordev skills/rapid-spec/SKILL.md lines 59-73 (Probe Platform Gates Before the Spec Depends on Them)"
+   ]
+  },
+  {
+   "mechanic": "Comparison arms are named approaches to the same question (002a pdfjs / 002b camelot), not replicas, and at least one variant takes the path of least resistance for the target stack; what to compare is written beside the variants before the user looks.",
+   "source_pointer": "open-gsd/gsd-core@next gsd-core/workflows/spike.md:152-164 (decompose, comparison type), :204 (research step c); gsd-core/workflows/sketch.md step research_stack (d) and the sketch README template's '## What to Look For'",
+   "quote": "comparison \u2014 same question, different approaches. Shared number with letter suffix. / d. Let research inform variants. At least one variant should follow the path of least resistance for the target stack.",
+   "scout_ahead_today": "plugins/scout/scripts/scout.py VARIANT_PROMPT (779-786) and _run_arm/cmd_variants (789-905) send every arm the identical question; the only per-arm difference is the index and branch (verified: scouting/variants-command/variants/run-4/v1/prompt.md vs v2/prompt.md differ only in 'v1'/'v2'). skills/variants/SKILL.md step 1 says the arms 'must differ on one axis', but the CLI cannot express that axis, so arms differ only by sampling. The comparison criteria the skill asks for are not stored in the run.",
+   "proposed_change": "scout.py variants: add repeatable `--approach \"<text>\"` (when given, n is the count of approaches and the positional n becomes optional; 2..4 still enforced) and `--criteria \"<text>\"` (required with --approach). Each arm's prompt gets one line: 'Your approach: <text>. Other arms take other approaches to the same question; do not switch to theirs.' Store `approach` on each arm and `criteria` on the run before launch; render an approach column in the log table and on the handoff's variant pointer lines, and the criteria line above the table. Without --approach, keep today's behaviour and label the arms 'replica' in the table so nobody reads sampling noise as an axis. skills/variants/SKILL.md step 1: one approach is the path of least resistance in this codebase (the existing pattern), as the baseline.",
+   "kind": "script",
+   "value": "high",
+   "cost": "medium",
+   "sources": [
+    "open-gsd/gsd-core@next gsd-core/workflows/spike.md:152-164 (decompose, comparison type), :204 (research step c); gsd-core/workflows/sketch.md step research_stack (d) and the sketch README template's '## What to Look For'"
+   ]
+  },
+  {
+   "mechanic": "Before a VALIDATED verdict, depth is required: no verdict from a single happy-path run, surprising results get an isolating follow-up test, and a fixed probe list (large inputs, concurrency, malformed data, network failure) is run.",
+   "source_pointer": "open-gsd/gsd-core@next gsd-core/workflows/spike.md:274 (build_spikes), :305-308 (step d), :382",
+   "quote": "Never declare VALIDATED after a single happy-path test. Follow surprising findings. Test edge cases. / A spike that says \"VALIDATED \u2014 it works\" with no nuance is almost always incomplete.",
+   "scout_ahead_today": "skills/close/SKILL.md step 4 defines proven as 'holds within current constraints, with evidence' and lists unknowns, but has no rule against a proven verdict from a single happy path. cmd_close (scout.py:528-548) accepts --verdict proven unconditionally. docs/prior-art.md lists prp-spike's 'a working artifact is not a proven hypothesis' as borrowed, but grep finds that sentence in none of README.md, DESIGN.md, docs/protocol.md or plugins/.",
+   "proposed_change": "skills/close/SKILL.md step 4 gets one paragraph: before `--verdict proven`, each probe from the list (large input, concurrent use, malformed input, a dependency failing) either ran, with a pointer, or is passed as `--unknown`. skills/think/SKILL.md gets one bullet: a surprising result gets an isolating follow-up run before the next pivot. scout.py cmd_close: refuse `--verdict proven` when no live decision is `code, proved`, with the message 'a proven verdict needs at least one observed decision; record it, or use conditional/unanswered'.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "open-gsd/gsd-core@next gsd-core/workflows/spike.md:274 (build_spikes), :305-308 (step d), :382"
+   ]
+  },
+  {
+   "mechanic": "Each parked item gets a stable id and a greppable code stub at the exact spot the work is blocked; the stub is removed when the item is resolved, so a grep lists only the items that are still open.",
+   "source_pointer": "gongxh13/spikekit skills/spike-goal/references/pending-decisions.md, sections 'The code stub' and 'Close the loop' (lines ~58-110)",
+   "quote": "`grep -rn \"pending-decision:\"` lists every parked spot. Don't ship a plausible-looking guess in place of the stub \u2014 a stub the human will see beats a wrong default they won't.",
+   "scout_ahead_today": "plugins/scout/scripts/scout.py cmd_question appends {text, at, direction, answered} with no id; cmd_answer addresses a question by its 1-based position among the *open* questions, so the numbers shift after every answer, and cmd_pivot and cmd_status -v print the parked list as '? text' with no number at all. Nothing ties a parked question to a code location.",
+   "proposed_change": "scout.py: give questions ids Q1..Qn (like the D-ids). `question` prints the stub to paste, e.g. `TODO(scout: Q3)`. `answer` takes the id (`answer Q3 \"...\"`) instead of a shifting index. pivot, status and the handoff print the ids. cover_gaps (or close) runs `git grep -n 'TODO(scout: Q'` on the scout branch and warns about stubs whose question is answered and about ids that are not in the record. The file:line of an open stub goes into the handoff's Open questions line as its pointer.",
+   "kind": "script",
+   "value": "high",
+   "cost": "medium",
+   "sources": [
+    "gongxh13/spikekit skills/spike-goal/references/pending-decisions.md, sections 'The code stub' and 'Close the loop' (lines ~58-110)"
+   ]
+  },
+  {
+   "mechanic": "A parked item carries the agent's recommendation with its reason, and the default the work proceeds on meanwhile, so the human reacts to a proposal at the boundary rather than to a blank question.",
+   "source_pointer": "gongxh13/spikekit skills/spike-goal/references/pending-decisions.md 'Card format' + 'Rules' (lines ~31-80); skills/spike-goal/references/autonomous-spike.md 'Record assumptions, don't bury them'",
+   "quote": "**Recommend, don't abdicate.** Always include your best recommendation and reasoning. You did the spike; you know the most. The human is deciding, not starting from zero.",
+   "scout_ahead_today": "scout.py cmd_question stores only the text. `decide --by open --ask` has the question but no recommendation. Interim assumptions exist only for variant arms (VARIANT_PROMPT: 'state your assumption in VARIANT.md'); the main scout has nowhere to record 'building on X until told otherwise'.",
+   "proposed_change": "scout.py `question` gets `--recommend \"<option + one-line reason>\"` and `--proceeding-on \"<the default the build uses meanwhile>\"`, both optional and stored on the question. render_log, the boundary list printed by cmd_pivot, context_text and the handoff's Open questions render them as 'Q3: <q> \u2014 recommend: \u2026; proceeding on: \u2026'. pivot/SKILL.md and close/SKILL.md: present each parked question with its recommendation first.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "gongxh13/spikekit skills/spike-goal/references/pending-decisions.md 'Card format' + 'Rules' (lines ~31-80); skills/spike-goal/references/autonomous-spike.md 'Record assumptions, don't bury them'"
+   ]
+  },
+  {
+   "mechanic": "A triage filter decides what may be parked. If an experiment could answer it, run the experiment. If a cheap-to-reverse default is fine, assume it and record the assumption. Park only a call that needs a person: intent, business, credential or taste.",
+   "source_pointer": "gongxh13/spikekit skills/spike-goal/references/pending-decisions.md 'Rules'; skills/spike-goal/references/triage.md 'The third outcome: park'",
+   "quote": "**Only park what truly needs a human.** If an experiment could answer it, that's a spike, not a parked decision. If a reasonable default is fine and cheap to change, just assume it and record the assumption.",
+   "scout_ahead_today": "skills/think/SKILL.md and skills/start/SKILL.md send every question the model 'would ask the operator mid-build' to `scout question`, with no filter, so the parking lot can fill with questions a five-minute run would settle, and the boundary turns into an interview.",
+   "proposed_change": "think/SKILL.md, a short paragraph before the parking-lot instruction: before parking, ask whether a run on the scout branch could answer the question. If yes, run it and note the result. If a default is cheap to reverse, take it and park it with `--proceeding-on` (see the previous candidate). Park as a plain question only what the operator alone can settle. Mirror it in one line in start/SKILL.md step 3.",
+   "kind": "skill-text",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "gongxh13/spikekit skills/spike-goal/references/pending-decisions.md 'Rules'; skills/spike-goal/references/triage.md 'The third outcome: park'"
+   ]
+  },
+  {
+   "mechanic": "Each spike keeps a 'Current state' or next-step field: where things are now and the next concrete action, which a resuming session continues from.",
+   "source_pointer": "gongxh13/spikekit skills/spike/SKILL.md \u00a71b NOTES.md template ('## Current state') and \u00a71c; skills/spike-init/SKILL.md 'The board format' (line 60)",
+   "quote": "`next-step` = the next concrete action, not a vague aspiration.",
+   "scout_ahead_today": "state.json has no next-action field. context_text (the SessionStart re-injection) gives the question, current direction, the last 5 entries, decisions in force and parked questions, but nothing says what to do next. cmd_status shows neither the next step nor when the scout was last touched (updated_at exists but is not printed).",
+   "proposed_change": "scout.py: `scout next \"<the next concrete action>\"` overwrites directions[-1].next. It is rendered as a 'Next:' line under the direction in log.md, in `status` (with updated_at as 'last touched'), and as a line in context_text, so a session that starts after a compaction or a resume gets the next action. pivot clears it. think/SKILL.md: update it whenever the plan for the next step changes.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "gongxh13/spikekit skills/spike/SKILL.md \u00a71b NOTES.md template ('## Current state') and \u00a71c; skills/spike-init/SKILL.md 'The board format' (line 60)"
+   ]
+  },
+  {
+   "mechanic": "Whether the doc is good enough is tested by having a fresh agent work from it, not by the author re-reading it.",
+   "source_pointer": "gongxh13/spikekit skills/spike-wrap/SKILL.md \u00a77 'Hand off' (line ~285); README.md 'Explore, then record it'",
+   "quote": "Don't implement the feature here \u2014 that's a separate step, deliberately done by a fresh agent reading the doc (which also tests whether the doc is actually good enough).",
+   "scout_ahead_today": "skills/handoff/SKILL.md step 3 has the same model that wrote the record read handoff.md back 'as the downstream reader would'. The script's cover_gaps check is mechanical (ids, directions, branches, questions present). Nothing semantic checks whether a cold reader would still have to re-ask settled things.",
+   "proposed_change": "scout.py `handoff --cold-read [--usd 1]`: after the cover check passes, spawn one `claude -p --model opus --max-budget-usd <usd> --no-session-persistence` in the repository with read-only tools (Read, Grep), prompted with only the handoff path: 'list every question you would still have to ask before building from this; mark any that the Decisions table already answers'. Save the output to scouting/<slug>/cold-read.md, add its cost to spent.usd, and record it as an entry. handoff/SKILL.md: each question the cold reader raised that is not in Open questions is either fixed in the record (decide/question) or noted as a gap; then regenerate.",
+   "kind": "script",
+   "value": "high",
+   "cost": "medium",
+   "sources": [
+    "gongxh13/spikekit skills/spike-wrap/SKILL.md \u00a77 'Hand off' (line ~285); README.md 'Explore, then record it'"
+   ]
+  },
+  {
+   "mechanic": "A fresh worktree does not carry gitignored dependencies or build caches, so they must be installed in it. Parallel runs need distinct ports so their dev servers coexist.",
+   "source_pointer": "gongxh13/spikekit skills/spike-goal/SKILL.md 'Work in a git worktree (always)' (lines ~106-115)",
+   "quote": "Install deps in the fresh worktree \u2014 `node_modules` and build caches are gitignored and are **not** carried over \u2026 Run the worktree's dev server on a *different* port so it coexists with the user's",
+   "scout_ahead_today": "scout.py _run_arm creates a bare `git worktree add` and launches `claude -p` in it straight away. The arms run concurrently (all Popen'd, then collected), so they can collide on dev-server ports. Each arm spends its own capped budget discovering and installing dependencies, so arms with unequal luck at setup get unequal budget for the question. VARIANT_PROMPT says neither.",
+   "proposed_change": "scout.py variants: add `--setup \"<cmd>\"`, run by the script in each worktree before the arm launches. Its exit code goes into the arm record, and it is the same for every arm and outside the per-arm cap, which keeps the race fair. Export SCOUT_ARM=<i> into each arm's env. VARIANT_PROMPT gains one line: 'Gitignored dependencies are not in this worktree unless setup ran; if you start a server, use a port offset by $SCOUT_ARM.' variants/SKILL.md step 1: name the setup command when the repo has one.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "gongxh13/spikekit skills/spike-goal/SKILL.md 'Work in a git worktree (always)' (lines ~106-115)"
+   ]
+  },
+  {
+   "mechanic": "Superseding a decision requires a reason; the reason is stored on the old claim and rendered under the decision that replaced it.",
+   "source_pointer": "vikcena01/ai-continuity-plugin src/core/reconcile.ts (supersede branch); src/core/store.ts supersede(); src/core/resume.ts 'Active decisions' predecessors loop",
+   "quote": "skipped \"${op.title}\": superseding ${old.id} needs a reason \u2014 the reason a decision was replaced is what stops it being re-litigated / \u21b3 replaced [${p.id}] \"${p.title}\" \u2014 because: ${p.superseded_reason}",
+   "scout_ahead_today": "plugins/scout/scripts/scout.py cmd_decide sets superseded_by=new id and cmd_pivot sets superseded_by=direction number, but neither stores a reason. render_handoff shows only 'D4' or 'direction 2' in the superseded-by column, and its Pointers list gives each direction without its learned line. A handoff reader can see that D1 was reversed but not why; the why is only in log.md.",
+   "proposed_change": "scout.py: `decide --supersedes` requires `--because` (die without it). `pivot --supersedes` requires `--learned` and copies it in. Both write `superseded_reason` on each old decision. render_decisions prints `superseded by: D4 \u2014 because \u2026`, the handoff Decisions column renders `D4: <reason>`, and cover_gaps refuses a superseded row that has no reason. Update skills/pivot, skills/close (re-run inferred) and skills/think to pass --because. Add a test to test_borrowed_rules.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "vikcena01/ai-continuity-plugin src/core/reconcile.ts (supersede branch); src/core/store.ts supersede(); src/core/resume.ts 'Active decisions' predecessors loop"
+   ]
+  },
+  {
+   "mechanic": "Rejected paths are re-injected at session start as a 'do not revisit' guardrail with their reasons, so a fresh or compacted session does not re-propose them.",
+   "source_pointer": "src/core/resume.ts rejected section; src/hook-session-start.ts additionalContext header",
+   "quote": "## \ud83d\udeab Do NOT revisit (already rejected \u2014 do not re-propose) / Treat \ud83d\udd12 FROZEN items and \ud83d\udeab rejected alternatives as authoritative \u2014 do not re-open or re-propose them.",
+   "scout_ahead_today": "scout.py context_text (the SessionStart payload) injects the current direction, its last 5 entries, live decisions and parked questions. Closed directions, their learned lines and superseded decisions are not injected. After a compaction mid-scout, the successor has no record in context of what was tried and abandoned.",
+   "proposed_change": "scout.py context_text: add 'Tried and left (do not reopen without new evidence):' with one line per closed direction (`N: <text> \u2014 learned: <learned>`) and one per superseded decision (`D1 <text> \u2014 replaced because <superseded_reason>`, from the candidate above). Extend test_hook_records_session_and_injects to assert a pivoted direction's learned line appears.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "src/core/resume.ts rejected section; src/hook-session-start.ts additionalContext header"
+   ]
+  },
+  {
+   "mechanic": "The model cannot override a claim the human locked: anything that would supersede a frozen claim is parked instead of applied, and accepting the override needs a second explicit act.",
+   "source_pointer": "src/core/reconcile.ts frozen guard; src/core/resolve.ts unfreeze; .continuity/claims/d20fz.md",
+   "quote": "Freezing is the single human act in the model, so overriding it has to be a second deliberate one. / frozen guard: never auto-supersede a frozen claim; park the proposal.",
+   "scout_ahead_today": "scout.py cmd_decide accepts `--supersedes D1` for any `--by`. During close recovery the model can therefore supersede an operator decision (quoted words) with its own `--by code --proof inferred` record, and nothing stops it or surfaces it.",
+   "proposed_change": "scout.py cmd_decide: refuse `--supersedes Dk` when Dk is `by: operator` unless the new decision is also `--by operator` with its own evidence. The die message says to record `--by open --ask \"Dk said \u2026; the code shows \u2026 \u2014 keep Dk?\"` so it is raised at the next boundary. cmd_pivot: list any operator decisions it marks superseded in the boundary printout, so the operator sees them at the pivot. One test.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "src/core/reconcile.ts frozen guard; src/core/resolve.ts unfreeze; .continuity/claims/d20fz.md"
+   ]
+  },
+  {
+   "mechanic": "The capture criteria name two categories, measured as the most often missed: framing statements (strategy, what matters) and standing instructions (how to operate, who decides). Standing instructions are recorded as constraints, never as open questions.",
+   "source_pointer": "src/hook-stop-capture.ts additionalContext; skills/continuity/SKILL.md 'While working'; CHANGELOG v1.2.0 (89 user turns audited against 119 claims)",
+   "quote": "(4) FRAMING \u2014 a statement that sets strategy, priority or what matters ... These do not look like decisions and are the most commonly missed; (5) a STANDING INSTRUCTION ... Record as a CONSTRAINT, never as a question",
+   "scout_ahead_today": "scout.py cmd_recover flags operator utterances only on /record this|decide|go with|settled|let's use|we'll use/. skills/close/SKILL.md step 2 says to record the decisions found in the diff and utterances and does not mention framing or standing instructions. 'never touch X' or 'Y is the real bottleneck' goes unflagged, or gets tagged `open`.",
+   "proposed_change": "scout.py cmd_recover: widen the `**` flag regex with framing and instruction cues (never|always|don't|do not|must|only|your call|what matters|the real|priority). skills/close/SKILL.md step 2 gets one paragraph: framing and standing instructions are operator decisions, quoted, never `open`; progress narration and restatements are not decisions; default to recording nothing.",
+   "kind": "skill-text",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "src/hook-stop-capture.ts additionalContext; skills/continuity/SKILL.md 'While working'; CHANGELOG v1.2.0 (89 user turns audited against 119 claims)"
+   ]
+  },
+  {
+   "mechanic": "The transcript reader extracts assistant text as well as user text, and the detector treats a moment where \"the user or assistant explicitly chose one approach over another\" as a decision candidate.",
+   "source_pointer": "JiHongKim98/madr-gen scripts/extract-decisions.sh (the jq `elif .type == \"assistant\"` branch); agents/decision-detector.md, \"Analysis Process\" step 4",
+   "quote": "elif .type == \"assistant\" then ... \"## Assistant\\n\" + $text  /  \"The user or assistant explicitly chose one approach over another\"",
+   "scout_ahead_today": "plugins/scout/scripts/scout.py operator_utterances() keeps only `type == \"user\"` records, and cmd_recover prints only operator lines, flagging them with the regex `record this|decide|go with|settled|let's use|we'll use`. Rule 2 forbids asking mid-build, so the agent makes many choices on its own (\"X instead of Y because\u2026\"). Those choices live only in the assistant text of earlier or compacted sessions, and the close never sees them unless a note happened to capture one.",
+   "proposed_change": "scout.py: add agent_choices(path), parsed the same way as operator_utterances but for `type == \"assistant\"` text blocks (skip tool_use and thinking). Keep only lines that match a choice pattern (`instead of|rather than|chose|went with|over .* because|trade-?off`), capped at N lines per transcript and 300 chars each. cmd_recover prints them under \"## Agent choices from recorded transcripts\", each with its timestamp and transcript path. Add a sentence to skills/close/SKILL.md step 2: an agent choice is never `operator`. It is `code` when a constraint forced it, with a pointer; otherwise it is `open` with `--ask \"keep X over Y?\"`, so silent mid-build picks reach the boundary. Test in tests/test_scout.py: an assistant record with \"instead of\" is listed, and one without the pattern is not.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "JiHongKim98/madr-gen scripts/extract-decisions.sh (the jq `elif .type == \"assistant\"` branch); agents/decision-detector.md, \"Analysis Process\" step 4"
+   ]
+  },
+  {
+   "mechanic": "Decide throwaway vs keep before writing code, and treat a keep verdict as authorizing a rewrite, never a promotion of the spike code.",
+   "source_pointer": "gamedev-skills/awesome-gamedev-agent-skills skills/workflows/prototype-fast/SKILL.md lines 30-33 (Core workflow step 2), 54 (brief THROWAWAY?), 86-92 (Pattern 4 Containment), 103-104 (Pitfalls)",
+   "quote": "Decide throwaway vs keep \u2014 before you write code. ... Rule: a \"keep\" decision authorizes a REWRITE in the real project, not a copy-paste of the spike.",
+   "scout_ahead_today": "Nothing at start. `close --outcome kill|commit` (scout.py cmd_close, skills/close/SKILL.md step 4) says `commit` \"carries the branch forward\", and render_handoff's Status/Pointers give the downstream track the branch with no statement of whether it is a base to build on or evidence to rebuild from. No occurrence of throwaway/rewrite/promote in README, DESIGN, docs/protocol.md or any SKILL.md.",
+   "proposed_change": "scout.py: `start --code throwaway|keep` (default throwaway), stored as st[\"code\"]; render_log and context_text add one line `Code: throwaway (the branch is evidence; commit authorizes a rebuild from the decisions, not a merge)` or `Code: keep (minimal structure; the branch is a base)`; render_handoff Status prints the same line so the spec track knows whether to merge or rebuild. skills/start/SKILL.md step 1: pick it with the box and kill criteria, default throwaway, before any code. docs/handoff-format.md Status row lists it. One test asserting the line is in handoff.md.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "gamedev-skills/awesome-gamedev-agent-skills skills/workflows/prototype-fast/SKILL.md lines 30-33 (Core workflow step 2), 54 (brief THROWAWAY?), 86-92 (Pattern 4 Containment), 103-104 (Pitfalls)"
+   ]
+  },
+  {
+   "mechanic": "A hard timebox with a visible timer that rings: stop when it rings, even if unfinished.",
+   "source_pointer": "prototype-fast/SKILL.md lines 34-35 (step 3) and 55 (brief TIMEBOX)",
+   "quote": "Set a hard timebox (30-90 min for a mechanic; one sitting for a slice) and a visible timer. ... TIMEBOX: e.g. 60 min. Stop when it rings, even if unfinished.",
+   "scout_ahead_today": "The hours box never rings in practice. scout.py warn_box (line 490) compares only operator-logged hours (`spent --hours`), and no SKILL.md tells anyone to run `spent`; warn_box is called only from cmd_spent and cmd_variants. Calendar hours are rendered in box_line but never compared to the box. skills/think/SKILL.md says \"when the box line in the log says the hours or dollars are spent\" but the box line reaches context only at SessionStart via context_text, which does not flag an exceeded box.",
+   "proposed_change": "scout.py: call warn_box at the end of every state-changing command (note, question, decide, pivot), and have it also fire when calendar hours exceed box.hours, labelled as such (`BOX: 4.3h on the calendar against a 4h box; logged 0.0h. Pivot or close.`) so it stays honest about which clock rang; context_text prepends the same BOX line when exceeded so the SessionStart re-injection carries it. skills/think/SKILL.md 'When the direction is spent': a BOX line in any command's output is the ring, the next message is a pivot or close. Test: open with --hours 0.0001, run note, assert BOX on stderr.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "prototype-fast/SKILL.md lines 34-35 (step 3) and 55 (brief TIMEBOX)"
+   ]
+  },
+  {
+   "mechanic": "The ledger is append-only and only its status line can change: each experiment entry has a status (open, passed, met, killed or expired), and an earlier entry is never rewritten.",
+   "source_pointer": "antiagree/antiagree skills/antiagree/SKILL.md lines 152-170, '## Make it stick'",
+   "quote": "append, and never edit past entries except their status line. ... A status is one of: `open`; `passed` (the test ran and met the GO bar); `met` (a kill criterion was met); `killed` (the user dropped the idea); `expired` (the deadline passed without the test).",
+   "scout_ahead_today": "plugins/scout/scripts/scout.py cmd_prereg (line 551-554) sets `st[\"prereg\"] = {...}`, so a second `prereg` silently overwrites the first. The pass rule can therefore be moved after a result. Nothing records whether the scored run happened or what it returned. docs/measured.md shows the cost: the concurrency-race pre-registration in scouting/variants-command/handoff.md is 'not yet run' and has no field to say so.",
+   "proposed_change": "In scout.py, make `st[\"prereg\"]` a list (`P1`, `P2`, ...). `prereg` appends a new entry and refuses to touch an existing one. A new subcommand, `prereg-status <P-id> passed|failed|expired|dropped --evidence \"<run pointer>\"`, changes only that entry's status and adds a dated log entry. render_handoff prints every entry with its status line. cover_gaps also requires each P-id to appear in the handoff. Add one test: a second prereg must not change P1's pass rule.",
+   "kind": "script",
+   "value": "high",
+   "cost": "medium",
+   "sources": [
+    "antiagree/antiagree skills/antiagree/SKILL.md lines 152-170, '## Make it stick'"
+   ]
+  },
+  {
+   "mechanic": "A breached bar (a kill criterion that was met, or a deadline passed with no test run) becomes the first thing the next review says, not one line among the others.",
+   "source_pointer": "antiagree/antiagree skills/antiagree/SKILL.md line 50, '## 1. Check the ledger'",
+   "quote": "If a kill criterion has been met, or a deadline passed without the test being run, that leads the review: the user set that bar before they were attached to the outcome.",
+   "scout_ahead_today": "scout.py warn_box (line 490) only prints to stderr, and only from `spent` and `variants`. context_text (line 623), which the SessionStart hook re-injects, shows box_line as neutral data mid-text. cmd_status shows the box but gives no warning. A session that resumes or compacts after the box is spent gets no instruction to pivot or close.",
+   "proposed_change": "In scout.py, add a breaches(st) helper that returns lines such as 'BOX SPENT: 4.5/4h logged, pivot or close' (hours or usd at or over the box) and, once append-only preregs exist, 'PREREG P1 still open past its by-date'. context_text puts these lines first, before 'Open scout:'. cmd_status prints them under the scout's name, and warn_box reuses the same helper. Add one test for the hook payload with a spent box.",
+   "kind": "hook",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "antiagree/antiagree skills/antiagree/SKILL.md line 50, '## 1. Check the ledger'"
+   ]
+  },
+  {
+   "mechanic": "A blind second opinion: a fresh agent receives the original goal and the artifacts but not the session's conclusions. Its verdict is then reconciled with the anchored one.",
+   "source_pointer": "antiagree/antiagree skills/antiagree/SKILL.md line 118, '## Reviewing this session' (and line 31, conflict of interest)",
+   "quote": "If the stakes are high and you can start a subagent, offer a blind second opinion: give it the original goal and the artifacts, not the session's conclusions, and reconcile its view with yours.",
+   "scout_ahead_today": "Nothing. In /scout:close (skills/close/SKILL.md) the same session that built the scout recovers its decisions and picks the verdict. The only independent check is re-running inferred decisions, and that is still done by the anchored model. Variant arms are blind to each other, but nothing blind ever judges the verdict.",
+   "proposed_change": "Add a `blind` subcommand to scout.py that reuses _run_arm/_finish_arm with one arm. It runs on a fresh sibling worktree at the scout branch head, with `--max-budget-usd` (default $1) and `--model opus`. The prompt carries only the question, the keep and kill criteria, and the branch. It contains no log, no learned lines, no decisions and no VARIANT notes. It asks for a verdict (proven, disproven, conditional or unanswered), proof pointers, and the one fact that would flip the verdict. Output goes to scouting/<slug>/blind/run-<n>/. Its cost is added to spent.usd. It appears in Pointers and is covered by cover_gaps. In the close SKILL.md, add step 3a: before choosing the verdict, run `blind` when the box allows, then write any disagreement into --verdict-note or --unknown. Never adopt the blind verdict silently.",
+   "kind": "script",
+   "value": "high",
+   "cost": "medium",
+   "sources": [
+    "antiagree/antiagree skills/antiagree/SKILL.md line 118, '## Reviewing this session' (and line 31, conflict of interest)"
+   ]
+  },
+  {
+   "mechanic": "Eval cases for `claude plugin eval`: transcript fixtures (history_file: history.jsonl), seeded workspaces (scaffold_script), LLM graders with weights, and a with/without-plugin arm. The CLI enforces a cost ceiling (`--max-cost-usd`).",
+   "source_pointer": "antiagree/antiagree evals/session-review/case.yaml + history.jsonl; evals/ledger-holds-you-to-it/case.yaml + scaffold.sh; evals/sound-plan-no-theater/graders/no-theater.md; .github/workflows/ci.yml 'structure' job",
+   "quote": "context:\n  history_file: history.jsonl ... graders: - type: llm name: audits-the-session weight: 2 criteria: >- Earlier in this session the assistant agreed to ... accepted the user's unverified \"60% of input tokens\"",
+   "scout_ahead_today": "tests/test_scout.py checks the plumbing offline, and tests/live.sh runs one scripted happy path. Neither scores behavior. docs/measured.md 'What to measure next' item 3 (decision-recovery accuracy: recovered vs missed vs invented) has never been measured. Nothing tests that /scout:think records a decision only on 'record this', or that the model never asks mid-build.",
+   "proposed_change": "Add plugins/scout/evals/ with three cases. (1) `recover-accuracy`: a scaffold_script builds a closed-ready scout whose sessions[] points at a fixture transcript. The fixture has two operator decisions, one agreement that is not a decision, and one unverified operator number. The grader counts recovered, missed and invented decisions and checks provenance tags. (2) `think-no-unasked-record`: inside an open scout the operator states a preference without 'record this'. PASS if state.json gets no new decision. (3) `park-not-ask`: an ambiguous build step. PASS if `question` was called and the operator was not asked. selftest.sh runs `claude plugin eval plugins/scout --max-cost-usd <n> --scaffold --trust-plugin` behind the same SCOUT_SKIP_LIVE switch. Record the results in docs/measured.md.",
+   "kind": "test",
+   "value": "high",
+   "cost": "medium",
+   "sources": [
+    "antiagree/antiagree evals/session-review/case.yaml + history.jsonl; evals/ledger-holds-you-to-it/case.yaml + scaffold.sh; evals/sound-plan-no-theater/graders/no-theater.md; .github/workflows/ci.yml 'structure' job"
+   ]
+  },
+  {
+   "mechanic": "At graduation, every decision that crosses a one-way door (public contract, persisted data or format, security boundary, hard-to-reverse architecture) is listed and marked unsettled for the real build, even when the user agreed to it, because the spike skipped the design review. The real build re-opens each one, seeded with the spike's choice.",
+   "source_pointer": "elijah-rou/agent-kit skills/spike/SKILL.md:55 (Graduate step 2); door definition skills/design-checkpoint/SKILL.md:12-22 (incl. 'a change that keeps every existing caller working is reversible... Persisted data and wire formats stay doors even when the change is additive')",
+   "quote": "One-way-door decisions made in a spike are not settled for the real build, even ones the user agreed to, because spike rules skip `design-checkpoint`. ... mark each as unsettled: the real build takes each through `design-checkpoint`, seeded with the spike's decision.",
+   "scout_ahead_today": "Nothing. docs/handoff-format.md 'How a spec-driven tool reads it' says decisions settled by the operator 'go into the spec as given... They are not re-asked', and code decisions go in as constraints. No decision carries a reversibility flag, so a persisted-format or public-contract choice made under scout rules reaches the spec tool as settled.",
+   "proposed_change": "scout.py cmd_decide: add `--door \"<which door: contract|data|security|architecture, one clause>\"`, stored as d['door']. render_decisions adds '- one-way door: <x>'. render_handoff: the Decisions table gets a 'door' column, or the 'settled by' cell gets a ', one-way door' suffix. Add one sentence to the provenance legend line: a door row was settled for exploration only, and the downstream track re-opens it seeded with this decision. skills/close/SKILL.md step 2: while recovering decisions, tag every door with the four-item definition (additive flags and params are not doors; persisted and wire formats are doors even when additive). docs/handoff-format.md: one bullet under 'How a spec-driven tool reads it'.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "elijah-rou/agent-kit skills/spike/SKILL.md:55 (Graduate step 2); door definition skills/design-checkpoint/SKILL.md:12-22 (incl. 'a change that keeps every existing caller working is reversible... Persisted data and wire formats stay doors even when the change is additive')"
+   ]
+  },
+  {
+   "mechanic": "Every question the agent cannot settle carries the default it will take if nobody answers, along with the options and a recommendation, so the work goes on under a stated assumption and the boundary knows what to redo.",
+   "source_pointer": "elijah-rou/agent-kit skills/design-checkpoint/references/rationale-template.md:31; skills/design-checkpoint/SKILL.md:57; skills/prototype-to-decide/SKILL.md:39",
+   "quote": "Phrased as questions for the user, each with options, a recommendation, and the default the agent will take.",
+   "scout_ahead_today": "`scout question \"<q>\"` (cmd_question) stores only the text. `decide --by open --ask` stores the question to ask. Neither records what the build assumed in the meantime, so at the pivot or close boundary an answer that differs from the silent working assumption does not show which work rests on it. Only VARIANT_PROMPT asks arms to state assumptions, and only in VARIANT.md.",
+   "proposed_change": "scout.py: add `--assumed \"<default the build proceeds on>\"` to `question` and to `decide --by open`, stored as q['assumed'] and d['assumed']. Render it as ' (proceeding on: X)' in log.md's parked list, in cmd_pivot's boundary printout, in context_text and in handoff Open questions. skills/think/SKILL.md and skills/start/SKILL.md: a parked question names the assumption the build takes meanwhile. At the boundary, an answer that differs from the assumption means re-checking the work done under it.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "elijah-rou/agent-kit skills/design-checkpoint/references/rationale-template.md:31; skills/design-checkpoint/SKILL.md:57; skills/prototype-to-decide/SKILL.md:39"
+   ]
+  },
+  {
+   "mechanic": "Every shortcut is marked in code with a `SPIKE:` comment saying what is faked or skipped, and graduation greps for them so every shortcut lands in the handoff.",
+   "source_pointer": "elijah-rou/agent-kit skills/spike/SKILL.md:31 (rules) and :54 (Graduate step 1)",
+   "quote": "Take shortcuts, and mark each with a `SPIKE:` comment saying what is faked or skipped ... Fill the Handoff section of `SPIKE.md`: settled decisions, open questions, every `SPIKE:` shortcut (grep for them)",
+   "scout_ahead_today": "Nothing mechanical. skills/close/SKILL.md asks the model to list 'the parts stubbed' under `--unknown` from memory. scout.py cmd_recover prints the diff stat but does not search for shortcut markers, so stubs depend on recall at the close.",
+   "proposed_change": "skills/think/SKILL.md: mark every fake or skip with a `SCOUT:` comment saying what is faked. scout.py: add a `shortcuts(top)` helper running `git grep -n 'SCOUT:' HEAD`. cmd_recover prints a '## Shortcuts marked in code' section. cmd_close stores the list as st['close']['shortcuts'] (file:line plus text, as pointers). render_handoff lists it under 'Still unknown' (or a 'Shortcuts' heading), and cover_gaps refuses a handoff that drops one.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "elijah-rou/agent-kit skills/spike/SKILL.md:31 (rules) and :54 (Graduate step 1)"
+   ]
+  },
+  {
+   "mechanic": "Every variant is observed by one method, captured the same way, giving one piece of evidence per variant. The parent also runs a child's result before presenting it.",
+   "source_pointer": "elijah-rou/agent-kit skills/prototype-to-decide/SKILL.md:30-35; skills/spike/SKILL.md:44 ('Run a child's result before presenting it.')",
+   "quote": "log the timing, print the output, or watch the render, the same way for every variant. ... Completion criterion: one piece of evidence per variant, captured the same way.",
+   "scout_ahead_today": "skills/variants/SKILL.md asks for criteria 'observable from running the arms' and leaves the model to read VARIANT.md, output.md and the diffs. scout.py _finish_arm captures cost, turns, diff stat and the arm's self-report. The harness runs nothing in the arm's worktree, so the evidence is self-reported and not captured the same way for every arm.",
+   "proposed_change": "scout.py cmd_variants: add `--observe \"<cmd>\"`. After _finish_arm commits each arm, the harness (not the arm) runs the command in that arm's worktree with a timeout and writes stdout, stderr and exit code to variants/run-<id>/v<i>/observe.txt, and records exit_code_observe in the arm record. The table gets an 'observe' column (exit code). skills/variants/SKILL.md step 1: the comparison criteria name the command that observes them.",
+   "kind": "script",
+   "value": "high",
+   "cost": "medium",
+   "sources": [
+    "elijah-rou/agent-kit skills/prototype-to-decide/SKILL.md:30-35; skills/spike/SKILL.md:44 ('Run a child's result before presenting it.')"
+   ]
+  },
+  {
+   "mechanic": "One shared human-turn classifier decides whether a transcript user line is something the human actually said. Compaction summaries (isCompactSummary / isVisibleInTranscriptOnly, or text starting 'This session is being continued') are rejected. For a slash command, the human's words are taken from the <\\command-args> of a leading command envelope instead of dropping the line.",
+   "source_pointer": "leesgit/claude-session-continuity-mcp src/utils/human-turn.ts (humanTurn, COMMAND_ENVELOPE, the isCompactSummary check); README '2.6.1 \u2014 compaction recovery' table",
+   "quote": "// \ucef4\ud329\uc158 \uc694\uc57d\uc740 user \uc904\ub85c \uae30\ub85d\ub418\uc9c0\ub9cc \uc0ac\ub78c\uc774 \uc4f4 \uac83\uc774 \uc544\ub2c8\ub2e4.\nif (entry.isCompactSummary === true || entry.isVisibleInTranscriptOnly === true) return none;  \u2026  // \uc2ac\ub798\uc2dc \ucee4\ub9e8\ub4dc \uc2e4\ud589 \uc2dc \uc2e4\uc81c \uc0ac\uc6a9\uc790 \uc694\uccad\uc740 <\\command-args> \uc548\uc5d0 \uc788\uc74c \u2192 \uc0ad\uc81c \ub9d0\uace0 \ucd94\ucd9c",
+   "scout_ahead_today": "plugins/scout/scripts/scout.py operator_utterances() skips only type!=user, isMeta, isSidechain, text starting with '<', and '[Request interrupted'. Measured this session against the local ~/.claude/projects transcripts: 32 of 36 compaction summaries pass that filter and would be printed by `recover` as operator utterances. They are model-written, and their wording often matches the `**` decision regex, so the close skill could quote a model paraphrase as operator evidence. That breaks the operator quote rule. In the other direction, every slash-command line starts with '<\\command-message>', so the operator's words passed as arguments (`/scout:think record this \u2026`, `/scout:pivot <direction>`) are dropped: 4 and 2 such lines in two sampled sales transcripts.",
+   "proposed_change": "In scout.py operator_utterances(): (a) skip records with isCompactSummary or isVisibleInTranscriptOnly, and skip text starting 'This session is being continued'; (b) when a text block starts with <\\command-message> or <\\command-name>, yield the stripped <\\command-args> content (skip it if empty) instead of dropping the block. Add two fixture lines to tests/test_scout.py: a compaction summary that must not appear, and a `/scout:think record this: use X` line whose args must appear.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "leesgit/claude-session-continuity-mcp src/utils/human-turn.ts (humanTurn, COMMAND_ENVELOPE, the isCompactSummary check); README '2.6.1 \u2014 compaction recovery' table"
+   ]
+  },
+  {
+   "mechanic": "The decision index records the commit it was checked against, and every source pointer is a file:line range. An entry whose source is missing or conflicting is shown as `unverified \u2014 do not act on it` rather than dropped.",
+   "source_pointer": "tests/fixtures/decision-index/docs/INDEX.md header line; README 'Decision index through the card' last bullet",
+   "quote": "> \ub300\uc870\ud55c \ucee4\ubc0b: `abc1234` \u00b7 \uac31\uc2e0: 2026-10-23 \u2026 \uc774 \uc0c9\uc778\uc740 \uc6d0\ubb38\uc744 **\ucc3e\uac8c** \ud558\ub294 \uc790\ub8cc\ub2e4.\nRecord \u2026 which commit it was checked against at the top; an entry whose source is missing or conflicting should say so (`unverified \u2014 do not act on it`) rather than be dropped",
+   "scout_ahead_today": "cmd_decide() stores the evidence text, direction and timestamp, but no commit, and HEAD is captured only at pivot, close and handoff. A `file:line` cited in direction 1 drifts or disappears as later directions rewrite the branch. Checking that pointers resolve is left to the model (handoff skill step 3: 'git rev-parse the commits').",
+   "proposed_change": "cmd_decide(): store `at_commit = git rev-parse HEAD` (plus a dirty flag from `git status --porcelain`) on each decision. render_decisions() and render_handoff() print evidence as `<evidence> @ <sha[:12]>`. In cmd_handoff, alongside cover_gaps, add a resolve pass: for each `path:line` token run `git cat-file -e <at_commit>:<path>`, and for each hex token run `git rev-parse --verify`. Mark failures `(unresolved)` in the Decisions table and print them, without refusing the handoff.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "tests/fixtures/decision-index/docs/INDEX.md header line; README 'Decision index through the card' last bullet"
+   ]
+  },
+  {
+   "mechanic": "The script, not the model, checks that a quoted reason exists verbatim in a source the model did not write: whitespace is normalized, the quote must be at least 10 characters, and anything else is rejected with a reason.",
+   "source_pointer": "oh-namgyu/why-log scripts/validate.py (module docstring, MIN_QUOTE, check_evidence); README.md 'Why' bullets",
+   "quote": "A reason is written as \"stated in history\" only if a quote exists verbatim in the pinned history (checked with `git`, not by the model)\u2026 / Sources are read from git\u2026 never from anything the model wrote, so a quote that only appears in the model's own output cannot pass.",
+   "scout_ahead_today": "plugins/scout/scripts/scout.py cmd_decide (l.447) only checks that --evidence is non-empty for --by operator. operator_utterances() (l.694) already extracts the operator's own turns, with assistant turns excluded, but only cmd_recover uses it, to print them. Nothing stops the model from passing a paraphrase, its own words, or a bare 'yes' as the operator quote.",
+   "proposed_change": "In cmd_decide, when --by operator: if --evidence names an existing file (a transcript pointer), accept it. Otherwise normalize whitespace and require at least 10 characters (so 'ok' or 'yes' fail), then require the text to be a substring of some operator_utterances() entry across st['sessions'] plus the current .session.json transcript. On a miss, die with 'quote not found verbatim in any recorded operator turn; quote them exactly, pass the transcript path, or record it --by open --ask'. If no transcript is readable at all, die with that reason rather than guessing. Add tests for a forged quote, a quote of the assistant's own words, and an under-length quote. Not verified this session: whether the operator's latest message is already flushed to the jsonl when the tool runs.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "oh-namgyu/why-log scripts/validate.py (module docstring, MIN_QUOTE, check_evidence); README.md 'Why' bullets"
+   ]
+  },
+  {
+   "mechanic": "When the maintainer is asked, the options are only what the record supports plus 'Unknown'. The asker never adds a plausible hypothesis, never pre-selects one and never words the question leadingly, because someone who does not remember will pick the plausible guess and it is then stored as testimony.",
+   "source_pointer": "oh-namgyu/why-log skills/why-log/SKILL.md step 3 'Ask' (l.27-35); scripts/qa.py _options",
+   "quote": "**Never invent a hypothesis option**, even a plausible one: a maintainer who does not remember will pick a reasonable-sounding guess, and the guess is then recorded as testimony. / Never pre-select, rephrase leadingly, or suggest which option is likely.",
+   "scout_ahead_today": "skills/close/SKILL.md step 3 and skills/pivot/SKILL.md step 3 say only 'raise them with the operator\u2026 in prose, all at once' and record with `answer`/`decide`. Nothing forbids the model from offering its own inference as the likely answer. An operator's 'yes, that' would then be recorded as `operator`, the strongest provenance, and an inference would pass as a settled decision.",
+   "proposed_change": "Add one paragraph to the boundary step of close/SKILL.md and pivot/SKILL.md (and a line in think/SKILL.md 'Never'). Ask each parked question and open decision as an open question, with its evidence pointer so the operator can recall the context. Never offer your own guess as an answer, never say which answer is likely, and accept 'I don't know' as a complete answer. If the operator only assents to something you proposed, that is not an operator decision: record it as `code, inferred` or keep it `open`.",
+   "kind": "skill-text",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "oh-namgyu/why-log skills/why-log/SKILL.md step 3 'Ask' (l.27-35); scripts/qa.py _options"
+   ]
+  },
+  {
+   "mechanic": "The golden fixture is frozen as a contract once the spike runs; it may change only when ground truth itself changes.",
+   "source_pointer": "alexandremendoncaalvaro/agentic-development src/skills/claude-code/ad-spike/SKILL.md, 'Step 2 \u2014 Golden fixture' (last paragraph); references/fixture-example.md",
+   "quote": "The fixture is the contract the pipeline validates against. Treat it like spec text \u2014 it should not change once the spike runs unless ground truth itself changes.",
+   "scout_ahead_today": "plugins/scout/scripts/scout.py cmd_prereg stores only question, arms, runs, pass_rule, cost_usd and at. It names no fixture, and a second `prereg` silently overwrites st['prereg'], so a re-registration after a scored run erases the first one. render_handoff prints the Pre-registration block without any check that the inputs are unchanged.",
+   "proposed_change": "scout.py: add `prereg --fixture PATH`, which refuses an uncommitted path and records {path, id: `git rev-parse HEAD:<path>`}. render_handoff prints `- fixture: <path> @ <id[:12]>`. cover_gaps (or cmd_handoff) re-runs `git rev-parse HEAD:<path>` and refuses to write the handoff when the id changed ('fixture changed since registration'). cmd_prereg refuses to overwrite an existing prereg unless `--supersede \"<why ground truth changed>\"` is passed. In that case it keeps the old one in st['prereg_history'], and the handoff shows that history. Add one test in tests/test_scout.py that changes the fixture and expects the refusal.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "alexandremendoncaalvaro/agentic-development src/skills/claude-code/ad-spike/SKILL.md, 'Step 2 \u2014 Golden fixture' (last paragraph); references/fixture-example.md"
+   ]
+  },
+  {
+   "mechanic": "The held-out evaluation set is written by a fresh agent told not to read the spike or any model output, and the artifact records who had seen what, because an author who saw earlier errors biases the set.",
+   "source_pointer": "alexandremendoncaalvaro/agentic-development doc/adr/0086-laya-fits-the-effect-gate-not-routing.md, Decision, first paragraph",
+   "quote": "measured, on a third held-out set written by a fresh subagent instructed not to read the spike, its training data, or any model output \u2026 The orchestrator had seen v1's errors on the second set before generating v2's data, which biases the second set for v2 and is why the third exists",
+   "scout_ahead_today": "Nothing. plugins/scout/skills/handoff/SKILL.md step 1 and skills/variants/SKILL.md step 4 say to pre-register 'before any scored run'. Neither says who writes the pass rule's inputs or what that author had seen, and the Pre-registration block records no exposure.",
+   "proposed_change": "scout.py cmd_prereg: add `--exposure \"<what the fixture's author had read>\"`, required when `--fixture` is given, rendered as `- fixture written by: <exposure>` in the Pre-registration block. skills/variants/SKILL.md and skills/handoff/SKILL.md: one paragraph each. The fixture is written before any arm runs, by someone who has not seen an arm's output. If the session's own model already saw arm output, record that as the exposure and do not call the set held-out. Do not add a new uncapped spawn for the fixture author.",
+   "kind": "skill-text",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "alexandremendoncaalvaro/agentic-development doc/adr/0086-laya-fits-the-effect-gate-not-routing.md, Decision, first paragraph"
+   ]
+  },
+  {
+   "mechanic": "Every approach is scored against the same golden fixture in a fixed two-layer results shape: an end-to-end pass rate plus, for each failure, the stage where it diverged and the debug artifact that shows it.",
+   "source_pointer": "alexandremendoncaalvaro/agentic-development src/skills/claude-code/ad-spike/references/eval-format.md; SKILL.md 'Step 4 \u2014 Two-layer evaluation'",
+   "quote": "\"end_to_end\": { \"total\": 10, \"passed\": 7, \"failed\": 3 } \u2026 \"failures\": [{ \"input\", \"diverged_at\": \"02-detect\", \"expected\", \"actual\", \"debug_artifact\" }] \u2014 End-to-end says *that* it failed; per-stage + debug artifact says *where* and *why*.",
+   "scout_ahead_today": "scout.py VARIANT_PROMPT asks each arm only for VARIANT.md. _finish_arm records cost_usd, turns, files_changed and status, and the run table (cmd_variants, render_log) has no score column. skills/variants/SKILL.md step 1 asks for criteria 'observable from running the arms', but the arms emit no machine-readable result against shared inputs.",
+   "proposed_change": "scout.py: add `variants --fixture PATH`, which refuses unless st['prereg'] names that fixture, so the scored run stays behind pre-registration. VARIANT_PROMPT gains one rule: 'Evaluate against <fixture> (committed in your base) and write eval.json: {total, passed, failed, failures:[{input, diverged_at, debug_artifact}]}'. _finish_arm copies eval.json into out_dir and adds `passed`/`total` to the arm record. The run table gains a `pass` column. The arms share only the committed fixture, never a draft.",
+   "kind": "script",
+   "value": "high",
+   "cost": "medium",
+   "sources": [
+    "alexandremendoncaalvaro/agentic-development src/skills/claude-code/ad-spike/references/eval-format.md; SKILL.md 'Step 4 \u2014 Two-layer evaluation'"
+   ]
+  },
+  {
+   "mechanic": "Run-level budget floor: once remaining budget falls under a fixed fraction, the orchestrator stops dispatching new work and drains to a checkpoint instead of overrunning.",
+   "source_pointer": "melucasleite/skill-ultracode-factory workflows/4-build.js lines ~499-503 (frontier scheduler); tests/build.test.mjs 'budget floor stops dispatch at <15% remaining'; README.md flag table",
+   "quote": "if (!stopDispatch && budget.total && budget.remaining() < 0.15 * budget.total) { stopDispatch = true; breaker = `budget: ...k tokens left (<15%)` ... draining to a checkpoint` / \"The build stops dispatching at 15% remaining and drains to a checkpoint.\"",
+   "scout_ahead_today": "plugins/scout/scripts/scout.py cmd_variants launches n arms at --usd each without looking at the box; warn_box() only prints 'BOX: ... Pivot or close' to stderr after the money is spent. context_text() (hook re-injection) shows the box numbers but no spent/draining flag.",
+   "proposed_change": "In cmd_variants, before any worktree is created: if box.usd is set, compute left = box.usd - spent.usd; die if n*cap > left (\"run would exceed the box: $X left; fewer arms, a lower --usd, or pivot/close\") and die if left < 0.15*box.usd (\"box draining: no new spawns; pivot or close\"). --dry-run prints the same check. In context_text(), when warn_box's condition holds, add one line 'Box spent: the next step is a pivot or a close.' One offline test in tests/test_scout.py mirroring the source's budget-floor test.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "melucasleite/skill-ultracode-factory workflows/4-build.js lines ~499-503 (frontier scheduler); tests/build.test.mjs 'budget floor stops dispatch at <15% remaining'; README.md flag table"
+   ]
+  },
+  {
+   "mechanic": "After each spike, a separate Opus adversary (effort max) inspects the spike's worktree and tries to refute its recommendation, returning one strongest objection with severity and whether it would change the decision; the ADR records it, and offers both paths when it would.",
+   "source_pointer": "melucasleite/skill-ultracode-factory workflows/1-spike.js pipeline stage 2 (adversary) and stage 3 (ADR writer); templates/adr.md '## Adversary's objection'",
+   "quote": "\"You are the adversary. Try hard to REFUTE this spike's recommendation. Look for: untested failure modes, evidence that does not support the claim, cheaper options ignored, lock-in, scale/perf/security traps. Inspect ... yourself.\" / \"If the objection would change the decision, the Decision section says so and offers both paths.\"",
+   "scout_ahead_today": "plugins/scout/skills/close/SKILL.md step 2 re-runs inferred decisions; nothing attacks the verdict or the proved decisions. The verdict is chosen by the same session that ran the scout. handoff.md Status has no objection line.",
+   "proposed_change": "New subcommand `scout.py challenge --verdict <v> --claim \"<one-line verdict claim>\" [--usd 1] [--model opus]`: creates a sibling worktree at HEAD (same helper as _run_arm), spawns one `claude -p --max-budget-usd` with a refute-only prompt (read the log, decisions.md, the branch; run things in this worktree only; return JSON {objection, severity low|medium|high, would_change_verdict}), meters its cost into spent.usd, stores close.objection in state.json. render_handoff Status adds 'Strongest objection (severity): ...; would change the verdict: yes|no'. close/SKILL.md: run it between step 3 and step 4; if would_change_verdict, the verdict is conditional and --verdict-note names both paths. Subject to the new box floor.",
+   "kind": "script",
+   "value": "high",
+   "cost": "medium",
+   "sources": [
+    "melucasleite/skill-ultracode-factory workflows/1-spike.js pipeline stage 2 (adversary) and stage 3 (ADR writer); templates/adr.md '## Adversary's objection'"
+   ]
+  },
+  {
+   "mechanic": "Every headless agent reports permission refusals verbatim in a permission_denials[] field; the orchestrator blocks that unit of work and surfaces the exact command, because a silent denial looks like a weak or stuck result.",
+   "source_pointer": "melucasleite/skill-ultracode-factory references/agent-rules.md rule 6; workflows/4-build.js runCard (permission_denials branch); templates/spike.md '## Permission denials'; SKILL.md 'Hard rules for you, the foreman'",
+   "quote": "\"Always show the human a permission denial with the exact command and where to allow it. A silent denial is a bug.\" / why: 'Headless agents cannot ask for permission; a silent denial would look like a stuck card.'",
+   "scout_ahead_today": "scout.py _finish_arm stores the whole claude -p JSON in variants/run-<id>/v<i>/result.json, which already carries a `permission_denials` array (verified in scouting/variants-command/variants/run-4/v1/result.json), but never reads it: the arm table shows cost, turns, files, status only. Arms run with --permission-prompts none, so a denied test command silently degrades an arm.",
+   "proposed_change": "In _finish_arm, read result.get('permission_denials') or [], store its length as `denied` on the arm and write the entries to v<i>/denials.txt; add a `denied` column to the table printed by cmd_variants and rendered in render_log. variants/SKILL.md step 3: an arm with denials is not evidence against its approach; name the refused command and the --tools value that would allow it before comparing.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "melucasleite/skill-ultracode-factory references/agent-rules.md rule 6; workflows/4-build.js runCard (permission_denials branch); templates/spike.md '## Permission denials'; SKILL.md 'Hard rules for you, the foreman'"
+   ]
+  },
+  {
+   "mechanic": "Questions that cannot be asked now carry options and a recommended default; work proceeds on the default, and the answer is logged as `human` or `assumed` so the report lists every assumption the run was built on.",
+   "source_pointer": "melucasleite/skill-ultracode-factory references/gate-protocol.md 'Asking' and 'Logging'; references/schemas.md 'Question shape'; templates/report.md '## Assumptions we made'",
+   "quote": "\"Apply the recommended default to the rest, and log each one in docs/questions.md as `assumed`.\" / \"A: <answer> (human | assumed)\"",
+   "scout_ahead_today": "scout.py cmd_question stores text only; cmd_answer stores the answer. Nothing records what the scout proceeded on while the question was parked, so when the operator answers at a boundary there is no way to see which work was built on a different assumption. The handoff's Open questions list bare text.",
+   "proposed_change": "`scout question \"<q>\" --assume \"<what I proceed with meanwhile>\"` stored on the question. cmd_answer prints 'differs from the assumption in force since <ts>: work after that point was built on \"<assume>\"' when the answer text is not the assumption (the model judges; the script just prints both side by side). render_log and render_handoff show '(proceeding on: <assume>)' for unanswered questions, and the handoff gets the unanswered-with-assumption ones under Open questions. think/start SKILL.md: park with --assume whenever you keep building; at the boundary raise them ranked by how much the answer changes the outcome.",
+   "kind": "script",
+   "value": "high",
+   "cost": "small",
+   "sources": [
+    "melucasleite/skill-ultracode-factory references/gate-protocol.md 'Asking' and 'Logging'; references/schemas.md 'Question shape'; templates/report.md '## Assumptions we made'"
+   ]
+  },
+  {
+   "mechanic": "Builder check: once the written design exists, a fresh agent that cannot talk to the author reads only the document and reports just the questions where a wrong guess would matter, ranked, or 'nothing important left'. The author then sorts them into three piles: already answered (fix the doc), minor (settle it and mark it as your call), theirs (one message, most important first). There is one round only.",
+   "source_pointer": "obra/superpowers skills/brainstorming/builder-check-prompt.md L6-23; skills/brainstorming/SKILL.md L228-245 (Builder check)",
+   "quote": "You've been handed a design document and asked to put together a plan to build what it describes. You will not be able to talk to the person who wrote it. ... Report only the questions you'd still need answered before you could plan this well: places where you'd have to guess and a wrong guess would matter.",
+   "scout_ahead_today": "plugins/scout/skills/handoff/SKILL.md step 3: 'Read it back once as the downstream reader would'. This is a self-read by the same session that wrote the record. scripts/scout.py cover_gaps() only checks that ids, directions, branches and parked questions appear in the text. It cannot tell whether a reader could act on them.",
+   "proposed_change": "scout.py: new subcommand `coldread [--usd 0.5] [--model opus]`. It spawns `claude -p --model opus --max-budget-usd <usd> --allowedTools Read --no-session-persistence` and builds the command with a helper shared with _run_arm (DRY). The prompt adapts the builder-check text: 'you will turn this into a spec; you cannot talk to whoever ran the scout; read scouting/<slug>/handoff.md; report only questions where a wrong guess changes the plan, ranked; else nothing important left'. The output is written to scouting/<slug>/coldread.md, the cost is added to spent.usd, and the run is logged as an entry. handoff/SKILL.md step 3 becomes: run coldread, then sort each question. Answered by the record or the code: fix it with decide/answer/note and regenerate. Minor: settle it and record it as the scout's call (see the next candidate). Theirs: `question` or `decide --by open --ask` so it lands in Open questions. Only one round runs. The final message lists the 'theirs' pile, most important first.",
+   "kind": "script",
+   "value": "high",
+   "cost": "medium",
+   "sources": [
+    "obra/superpowers skills/brainstorming/builder-check-prompt.md L6-23; skills/brainstorming/SKILL.md L228-245 (Builder check)"
+   ]
+  }
+ ],
+ "accepted_judgments": [
+  {
+   "accept": true,
+   "reason": "Quote verified against the source: SKILL.md:104 \"Track what got faked. Every stub is a hole in the proof; the report has to name them.\", references/evidence.md:77 \"The stub that hid the hard part. Mocks migrate toward whatever was difficult. Re-read every stub against the hypothesis before concluding.\", templates/spike-report.md:90 \"Stubbed: {every fake, and whether any of them covered part of the question}\". Not present today: grep of scout.py and skills/ finds stubs only as the free-text `close --unknown` list (cmd_close, close/SKILL.md step 4, handoff-format.md:40); nothing records one when it is made, `note` entries are per-direction and only the last five of the current direction are re-injected (context_text), so a stub from direction 1 is gone after a pivot or a compaction. Not an earlier borrow: prior-art.md \"What was borrowed\" lists kill criteria, proved/inferred, the verdict, the still-unknown list and the artifact-is-not-proof line from prp-spike, not stub tracking. Serves exploratory work directly: a spike stubs everything that is not the question (\"aim at the risk\"), so the one failure mode specific to spikes is stubbing the question itself and calling it proven. Breaks no rule: no dialog, nothing retrieved, state.json stays the record and the markdown is rendered from it, no new file. Engineered enough: it is the `question`/`answer` pair copied to `stub`/`unstub`, a section in two renders, one line in context_text, one branch in cover_gaps, one line in two skills. A real scout is measurably better off: today a proven verdict can rest on a mock of the thing asked, and the handoff reader has no way to see it.",
+   "refined_change": "plugins/scout/scripts/scout.py:\n1. cmd_start: add `\"stubs\": []` to the initial state next to `\"questions\": []`.\n2. New `cmd_stub(args)`: load the open scout, append `{\"text\": args.text, \"at\": now(), \"direction\": len(st[\"directions\"]), \"resolved\": None}` to `st[\"stubs\"]`, `_entry(st, \"stubbed\", args.text)`, save, print `stubbed (<n> open)`. New `cmd_unstub(args)`: like cmd_answer, index into the unresolved stubs, set `resolved` to `args.evidence` (required: the file:line or commit where the fake became real), `_entry(st, \"stub made real\", f\"{text} \u2192 {evidence}\")`, save. Argparse: `stub <text> [--scout]` with help \"record a part faked while building, and what it hides\"; `unstub <index> <evidence> [--scout]`.\n3. Add a helper `open_stubs(st)` returning `[s for s in st.get(\"stubs\", []) if not s.get(\"resolved\")]` (use `.get` so pre-existing state files load).\n4. render_log: after the \"## Questions parked for the next boundary\" block, if `st.get(\"stubs\")`: section \"## Stubbed\" listing `- [x|  ] <text> (direction N)` with ` \u2192 <evidence>` when resolved, mirroring the questions block.\n5. render_handoff: under \"## Still unknown\", before the close's `unknown` lines, emit `- stubbed: <text> (direction N)` for each open stub; the \"(nothing recorded\u2026)\" fallback applies only when there are neither open stubs nor unknown lines.\n6. context_text: after the parked-questions line, if open stubs: `Stubbed so far (re-read each against the question before any verdict): <text>; <text>`.\n7. cover_gaps: for each open stub whose `text` is not in the handoff text, append `\"stub: \" + text[:40]`; update the handoff parser help and the docstring to name stubs.\n8. cmd_recover: after the log, print a \"## Open stubs\" section listing the open stubs (or \"(none)\") so the verdict is chosen with them in view.\n9. tests/test_scout.py: extend the existing close/handoff test (around line 102) to record one stub, pivot, confirm context_text and handoff still carry it, unstub it with evidence and confirm it drops from \"## Still unknown\"; confirm handoff refuses when a stub text is missing (the cover check).\n\nplugins/scout/skills/think/SKILL.md, under \"How to answer\" after the `question` bullet, one bullet: when you fake a part to get at the question, record it as you do it: `python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/scout.py\" stub \"<what was faked, and what it hides>\"`; when a later direction makes it real, `unstub <n> \"<file:line or commit>\"`.\n\nplugins/scout/skills/close/SKILL.md, step 4, one sentence after \"Re-read the kill and keep criteria before choosing, not after:\": re-read every open stub (`recover` lists them) against the question; mocks drift toward whatever was hard, and a stub that covered the question itself makes the verdict `unanswered`, never `proven`.\n\ndocs/handoff-format.md \"Still unknown\" bullet: add that stubs still in place at the close are listed here as `stubbed:` lines. docs/prior-art.md \"What was borrowed\": append to the prp-spike line \"; stubs recorded as they are made and re-read against the question before the verdict\". README commands table: no new row; mention `stub` in the `/scout:think` row alongside \"record this\" is optional and can be skipped.",
+   "conflicts_with": "None. It does not duplicate `close --unknown` (that stays the free-text list; open stubs are rendered beside it), nor `note` (per-direction, not carried across pivots or into the handoff). The candidate placed the close-skill line in step 2; the verdict is chosen in step 4, so the line goes there.",
+   "priority": 2
+  },
+  {
+   "accept": true,
+   "reason": "Verified against the source: references/evidence.md carries \"Honour it exactly as written, report that it fired at the level it named, and report the missed seat as a separate finding. The gap in the criterion is itself a result.\" and spike-report.md's Phase 6 note says \"which kill criteria fired, or that none did.\" Not present today: cmd_close (scout.py:528-549) stores only verdict/verdict_note/unknown, and render_log/render_handoff/the hook render (lines 189-194, 289-292, 626-629) join the criteria with \"; \" and never relate them to the close. The earlier prp-spike borrow took \"kill criteria fixed before the build and re-read before deciding\", not the per-criterion outcome, so this is not a duplicate. It serves exploration directly: the whole point of pre-committing criteria is that the close can be checked against them, and today a handoff reader cannot see whether a `disproven` verdict rests on a criterion that fired or on taste. It stays inside the rules: state.json holds `fired`, the markdown is rendered from it, no dialog, no second record, and the \"honour as written, gap goes in --unknown\" sentence is one line of skill text. Engineered enough: one repeatable flag with validation, one shared criteria-rendering helper, one test.",
+   "refined_change": "scripts/scout.py: (1) add a helper `criteria_lines(st)` that returns the keep and kill lines with ids, e.g. \"Keep if: P1 <text>; P2 <text>.\" and \"Kill when: K1 <text>; K2 <text>.\" (keep existing \"(no kill criteria recorded)\" fallback), and use it in render_log (replace lines 189-194), render_handoff Status (replace 289-292, keep the \"Keep criteria:/Kill criteria:\" wording there if preferred) and the SessionStart hook render (replace 626-629), so the three renders stop duplicating the join. (2) `close` parser: `s.add_argument(\"--fired\", action=\"append\", help=\"criterion id that fired (K1.., P1..); repeatable; omit when none did\")`. cmd_close validates each id against the real range (K1..len(st[\"kill\"]), P1..len(st[\"keep\"])), die()s on an unknown id, and stores `\"fired\": args.fired or []` in st[\"close\"]. (3) In render_log's closed block (after the verdict line, ~238) and render_handoff Status (after the verdict line, ~295) render one line per criterion: \"K1 <text>: fired\" / \"K2 <text>: did not fire\"; when st[\"close\"][\"fired\"] is empty and criteria exist, render \"Criteria: none fired.\" Scouts closed before this change have no `fired` key: treat missing as [] (c.get(\"fired\", [])). (4) skills/close/SKILL.md step 4: add `[--fired K2]...` to the close command line and one sentence after the --unknown explanation: \"`--fired`, repeatable: the criterion ids (K1.., P1..) that fired; a criterion that turned out to name the wrong observation point is honoured exactly as written, never widened at the close, and the missed point goes in `--unknown` as its own finding.\" (5) tests/test_scout.py: one test that closes with --fired K1 and asserts the handoff renders \"K1 ...: fired\" and the other criterion \": did not fire\"; one that an unknown id (--fired K9) exits non-zero.",
+   "conflicts_with": "",
+   "priority": 2
+  },
+  {
+   "accept": true,
+   "reason": "Quote holds (fetched Wirasm/prp main: spike-report.md ll.75-83, framing.md ll.48-61, SKILL.md Phase 6 table). Not present: scout.py cmd_close (l.528) accepts `--verdict conditional|disproven` with no note and has no blast-radius / unlocks / cheaper-option fields; the only guard text is prose in close/SKILL.md step 4. The earlier prp-spike borrow (prior-art.md 'What was borrowed') took the verdict vocabulary, not its pricing. docs/handoff-format.md already promises that conditional is 'a priced decision that needs a decision-maker', so today the handoff can hand a decision-maker a conditional verdict with no price, which is the half-done report the source names. It serves exploratory work directly (conditional is the verdict most scouts should reach), keeps state.json as the record with the markdown rendered from it, is additive to handoff v1 (one section present only when conditional), adds no dialog, retrieval or second record, and is a few flags, two refusals, one render section and one paragraph. Refinement vs the candidate: no new `--constraint` flag \u2014 `--verdict-note` is already documented as 'for conditional: the thing held fixed', so a second flag would duplicate it; and `--blast-radius` is required for conditional (the source's one hard rule), while unlocks and cheaper-option stay optional.",
+   "refined_change": "1) plugins/scout/scripts/scout.py, parser for `close` (~l.963): keep `--verdict-note`; add `--blast-radius` (\"conditional: what depends on current behavior, what breaks or needs migrating\"), `--unlocks` (\"conditional: what else the constraint blocks\"), `--cheaper-option` (\"conditional: the flag, adapter or narrower change tried, and why it does or does not suffice\"). 2) cmd_close: before mutating state, `if args.verdict in (\"conditional\",\"disproven\") and not args.verdict_note: die(\"a conditional verdict names the constraint held fixed and a disproven one names the structural wall; pass --verdict-note\")`; `if args.verdict == \"conditional\" and not args.blast_radius: die(\"a conditional verdict without blast radius is half a report; pass --blast-radius\")`; `if args.verdict != \"conditional\" and (args.blast_radius or args.unlocks or args.cheaper_option): die(\"--blast-radius/--unlocks/--cheaper-option apply to --verdict conditional only\")`. Store `\"blast_radius\"`, `\"unlocks\"`, `\"cheaper_option\"` in st[\"close\"] beside verdict_note. 3) render_handoff: after the Status block and before \"## Decisions\", when c.get(\"verdict\") == \"conditional\" emit \"## Conditional constraint\" with lines \"- what must change: {verdict_note}\", \"- blast radius: {blast_radius}\", and, only when set, \"- also unlocks: {unlocks}\", \"- cheaper option tried: {cheaper_option}\". No change to cover_gaps or HANDOFF_VERSION. 4) docs/handoff-format.md: add `## Conditional constraint   present only when the verdict is conditional: what must change, blast radius, also unlocks, cheaper option tried` to the Shape block after Status, and one sentence under Fields: it is the price the verdict paragraph promises. 5) plugins/scout/skills/close/SKILL.md step 4: update the command line to show `[--blast-radius \"\u2026\"] [--unlocks \"\u2026\"] [--cheaper-option \"\u2026\"]`, and add one paragraph: a constraint question (\"is it worth changing C to allow Y\") has two jobs, show that Y hits a wall under C and show that relaxing C actually helps; a conditional verdict is a trade, so it is priced: what must change (the note), what depends on the current behavior (blast radius, required), what else C blocks (often what tips the decision), and whether a flag, an adapter or a narrower change gets the same result, tried once before recommending surgery on a primitive; when the wall shows mid-direction, trying the reversible option is a direction, not a close-time note. 6) README command table row for close: append \", priced when conditional\". 7) docs/prior-art.md 'What was borrowed' prp-spike bullet: append \"; a conditional verdict priced (what must change, blast radius, unlocks, cheaper option tried) and a disproven one naming its wall\".",
+   "conflicts_with": "None. The candidate's new `--constraint` flag would duplicate the existing `--verdict-note` (argparse help already says \"for conditional: the thing held fixed\"), so the refinement reuses that flag instead. hordev's per-assumption blast radius (prior-art.md table row) was never borrowed, so no overlap there.",
+   "priority": 2
+  },
+  {
+   "accept": true,
+   "reason": "Quote verified against the fetched source (prp SKILL.md Phase 1 \"Boundaries between verdicts\" line 41, Phase 6 line 116 \"Re-read the kill criteria and verdict boundaries\"; templates/spike-report.md line 39 \"Verdict boundaries (committed before building): PROVEN if \u2026 \u00b7 CONDITIONAL if \u2026 \u00b7 DISPROVEN if \u2026\"). Not present today: scout.py cmd_start stores only st['kill'] and st['keep'] (lines 393-394, argparse 919-920); render_log (189-194), render_handoff Status (289-292) and context_text (626-629) print only those two; the CONDITIONAL side exists only post hoc as close --verdict-note (966), i.e. the held-fixed constraint is named after the results are seen, which is exactly the rounding the source warns about. Earlier borrows cover kill criteria (prp-spike) and keep criteria (gamedev/bigpowers) but not a pre-committed conditional boundary, so no duplicate. It serves exploratory work (the close skill already says most honest disproofs are conditional), breaks no rule (a criterion fixed before the build like kill/keep, no dialog, no retrieval, lives in state.json and is rendered from it), and is one flag, three render lines and a sentence in two skills. A scout is measurably better off: at close it compares results against a boundary written before the build instead of choosing between disproven and conditional after seeing them.",
+   "refined_change": "plugins/scout/scripts/scout.py: (1) in build_parser, after the `--keep` argument on the start subparser (line ~920), add `s.add_argument(\"--conditional\", action=\"append\", help=\"conditional criterion: the observation that would make the verdict conditional, and the constraint held fixed (repeatable)\")`; (2) in cmd_start, beside `\"keep\": args.keep or []` (line ~394), store `\"conditional\": args.conditional or []`; (3) in render_log (after the Keep if / Kill when lines, ~189-194), render_handoff Status (~289-292) and context_text (~626-629), add, guarded by `st.get(\"conditional\")`, the line `Conditional if: ` + `\"; \".join(st[\"conditional\"])` + `.` (handoff Status uses `Conditional criteria: ` to match its `Keep criteria:` / `Kill criteria:` wording). Use `st.get(\"conditional\")` everywhere so pre-existing state.json files without the key still render. plugins/scout/skills/start/SKILL.md step 1: extend the usage line with `[--conditional \"<criterion>\"]...` and add after the `--keep` sentence: \"add a `--conditional` criterion when the question has an obvious held-fixed constraint (`conditional if <the observation>, on <the constraint held fixed>`): kill says what failure looks like, this says which kind it is, and deciding that after seeing results is how a conditional gets rounded to whichever verdict is convenient.\" Update the skill's argument-hint and the README command row to list `--conditional`. plugins/scout/skills/close/SKILL.md step 4 and plugins/scout/skills/pivot/SKILL.md step 1: change \"Re-read the kill and keep criteria\" to \"Re-read the kill, keep and conditional criteria\". docs/protocol.md rule 4a: \"Kill, keep and conditional criteria are fixed before the build\". docs/prior-art.md \"What was borrowed\": append to the prp-spike bullet \"the conditional boundary committed before the build\". Add one offline selftest case asserting a start with `--conditional` renders \"Conditional if:\" in log.md and in the hook context.",
+   "conflicts_with": "",
+   "priority": 3
+  },
+  {
+   "accept": true,
+   "conflicts_with": "None. Keep/kill criteria (already borrowed) say what observation settles the question; this says what decision the answer gates. Nothing in state.json, the start skill or the handoff records that today (checked cmd_start, render_log, render_handoff, skills/start/SKILL.md, protocol.md). The yes/no-same check runs before the scout opens, so it is not a mid-build question and adds no dialog.",
+   "priority": 3,
+   "reason": "Quote verified at Wirasm/prp references/framing.md (\"Check both outcomes change something. If PROVEN and DISPROVEN lead to the same next action, the question is not load-bearing. Do not spend a spike on it.\") and templates/spike-report.md (\"{Why this was worth a spike: the decision waiting on it, and what each outcome would change.}\"). Not present: scout.py cmd_start stores only question/box/kill/keep/direction; log.md and handoff \"## Question\" render the bare question. It serves exploratory work: the downstream spec tool reading handoff.md learns which decision the verdict unlocks, and a scout whose yes and no change nothing is the cheapest scout to not run. It is one optional flag, one state key, two rendered lines and one skill paragraph; the check happens at open, before the build, so it breaks no rule (no mid-build asking, no dialog, state.json stays the record, no second file).",
+   "refined_change": "1. plugins/scout/scripts/scout.py, argparse for \"start\" (~line 915): add `s.add_argument(\"--stakes\", help=\"the decision waiting on the answer: what yes changes, what no changes\")`. Optional, so existing callers and tests keep working.\n2. cmd_start (~line 384): add `\"stakes\": args.stakes` to the `st` dict, after \"question\".\n3. render_log (~line 185): after the `# Scout:` title and GENERATED line, when `st.get(\"stakes\")` is set, append `f\"Stakes: {st['stakes']}\"` before the Opened line.\n4. render_handoff (~line 281): under `## Question`, after the question line, when `st.get(\"stakes\")` is set, append a blank line then `f\"Stakes: {st['stakes']}\"` so a downstream spec tool sees the decision the verdict gates. Old state.json files without the key render unchanged (use .get).\n5. plugins/scout/skills/start/SKILL.md step 1: add `--stakes \"<\u2026>\"` to the command line, and this paragraph: \"Before running the command, write the stakes in one sentence: the decision waiting on the answer, what a yes would change, what a no would change. Pass it as `--stakes`. If yes and no lead to the same next action, the question is not worth a scout: say so to the operator in one line, naming that shared next action, and stop without opening the scout. The operator re-issues `/scout:start` with a sharper question if they still want one. This check happens before anything is built; it is not a mid-build question.\"\n6. docs/protocol.md rule 1 (the \"A scout is one question\" paragraph): add one clause, \"and records why it is worth asking: the decision waiting on it, and what yes and no would each change.\"\n7. docs/prior-art.md \"What was borrowed\" prp-spike bullet: append \"; the stakes line (the decision waiting on the answer) and the refusal to open a scout whose yes and no lead to the same next action\"."
+  },
+  {
+   "accept": true,
+   "reason": "Quote verified against the fetched source (Wirasm/prp .agents/skills/prp-spike/references/evidence.md \"Record the seat every verdict was proved from\"; templates/spike-report.md \"Where each verdict was proved from\" table and \"Limits of this result \u2014 By seat\"). Not present today: cmd_decide (scout.py:447-475) stores by/proof/evidence/ask/supersedes only, render_decisions and render_handoff carry no vantage point, and docs/prior-art.md \"What was borrowed\" lists proved/inferred but not the seat (recommendation 3 raised it and it was never taken). It serves exploratory work directly: a `proved` claim without its observation point is read as general by the successor spec track, which is exactly the overclaim the handoff's \"Still unknown\" section exists to bound. It is one optional flag, one field in state.json, one rendered line, one cell suffix and one paragraph in the close skill; no dialog, no retrieval, no second record, markdown still rendered from state.json. Refinement over the candidate: restrict --seat to --proof proved (an inferred claim was not observed anywhere, so a seat on it is a contradiction); keep the seat optional at the script level and ask for it in the skill, matching how proved/inferred is handled rather than adding a hard refusal.",
+   "refined_change": "1. plugins/scout/scripts/scout.py, decide subparser (near line 944): add `s.add_argument(\"--seat\", help=\"--by code --proof proved only: where it was observed \u2014 process, layer or surface, and under which mode, e.g. 'at the hook, default mode'\")`. In cmd_decide (line 447ff): after the existing `--proof` check add `if args.seat and not (args.by == \"code\" and args.proof == \"proved\"): die(\"--seat applies to --by code --proof proved only: an inferred decision was not observed anywhere\")`; add `\"seat\": args.seat if args.by == \"code\" else None` to the decision dict. 2. render_decisions (line 254ff): after the evidence line, `if d.get(\"seat\"): L.append(f\"- seat: {d['seat']}\")`. 3. render_handoff Decisions table (line 305): evidence cell becomes `{d.get('evidence') or ''}` + `f\" @ {d['seat']}\"` when seat is set (same value, no new column). 4. plugins/scout/skills/close/SKILL.md step 2: add `--seat \"<process/layer/surface, mode>\"` to the `--by code --proof proved` example line, and one paragraph after the proved/inferred sentence: a proved decision is only true from where it was observed, so give it a seat \u2014 the process, layer or surface and the mode it was seen under; the same claim can hold at one seat and fail at another. Step 4, `--unknown` sentence: add that a seat a proved claim was never checked from is its own entry, written as \"untested from <seat>\", kept separate from scale and stubs because collapsing them hides the narrower hole. 5. plugins/scout/skills/think/SKILL.md line 39: append the same `--seat` clause to the `--by code --proof proved|inferred` sentence. docs/protocol.md line 32-33: add \"and, for proved, the seat it was observed from\" after the proved/inferred clause. 6. tests/test_scout.py: one case that `decide --by code --proof inferred --seat x` dies and that a proved decision's seat appears in decisions.md and as `@ <seat>` in the handoff evidence cell. 7. docs/prior-art.md \"What was borrowed\", prp-spike bullet: append \"; the seat a proved decision was observed from, with untested seats listed separately under still unknown\".",
+   "conflicts_with": "",
+   "priority": 2
+  },
+  {
+   "accept": true,
+   "reason": "Quote verified: SKILL.md Phase 7 (Dispose) carries \"Verify the Evidence pointer before calling the report done. A named branch must exist and carry a commit; otherwise point at the store directory. Evidence that cannot be followed is a claim, not a result.\" and references/handoff.md \"Making the evidence followable\" carries \"`$PRP_DIR` is local-only. A path into it is unfollowable by anyone but the operator\". Not present today: cover_gaps (scout.py:578) only checks that branch names appear in the rendered text; resolution is a manual instruction in skills/handoff/SKILL.md step 3; render_handoff (scout.py:277) prints transcript paths under ~/.claude/projects and arm branches with no mark that another reader cannot follow them. Not in the prp-spike borrows listed under \"What was borrowed\" (kill criteria, proved/inferred, verdict, unknowns, working-artifact line). It serves the handoff directly, which is the one artifact a downstream track reads, and reinforces rule 9 / \"pointers, not copies\": a pointer is only worth more than a copy when it resolves. No new record: every annotation is derived from git and the filesystem at render time, state.json stays the sole source. Engineered enough: four git calls and three suffixes. Two refinements from the candidate: a scout branch with zero commits past base is NOT a refusal (a scout killed before its first commit is a legitimate result, and `--outcome kill` throws the work away), it renders a mark; and a missing arm branch is NOT a refusal either, because the hordev borrow forbids deleting arms only until the operator has seen the comparison, after which the operator may delete losers and the handoff must still render.",
+   "refined_change": "plugins/scout/scripts/scout.py: add `def branch_mark(b, base, top)` returning '' / ' (missing)' / ' (no commits past base)' / ' (not pushed)': `git rev-parse --verify --quiet <b>` fails -> missing; base and `git rev-list --count <base>..<b>` == 0 -> no commits past base; `git rev-parse --abbrev-ref <b>@{u}` fails -> not pushed. Add `def transcript_mark(p)` returning ' (missing)' when `p` is set and `not Path(p).exists()`, else ' (local to this machine)' when set, else ''. render_handoff takes `top` (cmd_handoff already has it; other callers pass None, and with top None no marks are added) and appends branch_mark to the scout branch line and to each `variant run \u2026 arm v\u2026 \\`branch\\`` line, and transcript_mark to each `- transcript:` line; the base path text stays as it is so tests/live.sh:82 `^- transcript: .*$SID.jsonl` still matches. cover_gaps unchanged (it checks presence); cmd_handoff adds one refusal before writing: if st['branch'] is set and `git rev-parse --verify --quiet` on it fails, die(\"handoff points at a scout branch that does not exist: <b>\") unless --no-check. Nothing else refuses: zero commits and missing arm branches render their mark. plugins/scout/skills/handoff/SKILL.md step 3: replace \"every pointer resolves (`git rev-parse` the commits)\" with \"the script has marked each branch missing / without commits / not pushed and each transcript local or missing; push what the downstream reader must be able to follow, and check the evidence column by hand since those pointers are free text\". tests/test_scout.py: one test starting a scout with a branch, one commit, running handoff --print and asserting '(not pushed)' on the branch line and '(local to this machine)' on a transcript line; a second asserting a scout started with the branch then deleted (`git branch -D`) makes handoff exit 2 with the refusal text and exit 0 with --no-check.",
+   "conflicts_with": "hordev racing-prototypes borrow (\"nothing deleted before the operator has seen the comparison\") permits deleting losing arm branches afterwards, so the candidate's \"missing branch is a refusal\" must apply only to the scout branch, not arms; and the candidate's \"rev-list count > 0 or refuse\" would block the handoff of a scout killed before its first commit, so it is a rendered mark, not a refusal. Otherwise none; cover_gaps stays as is.",
+   "priority": 2
+  },
+  {
+   "accept": true,
+   "conflicts_with": "",
+   "priority": 3,
+   "reason": "Quote verified at https://raw.githubusercontent.com/Wirasm/prp/main/.agents/skills/prp-spike/templates/spike-report.md line 17 (the candidate's pointer omitted the `.agents/skills/prp-spike/` prefix; the text holds, with one more sentence: \"Omit only if nothing external can change under it.\"). Not present: `cmd_close` stores tried/learned/thrown_away/verdict/verdict_note/unknown only, and `render_handoff` Pointers pin base/head/arm commits and transcripts, never a runtime or dependency version; no skill mentions lockfiles or `--version`. It serves exploratory work directly: the protocol's `proven` \"holds within current constraints\" and `conditional` \"holds only if a named constraint changes\", and the versions the verdict was observed under are exactly those constraints, so a successor can tell a stale verdict from a standing one instead of re-running the scout. Breaks no rule: state.json stays the record and the markdown is rendered from it; no dialog, no retrieval, no second record; a version string is a pointer, not a copy. Not an earlier prp-spike borrow (those were kill criteria, proved/inferred, the verdict enum, still-unknown, the working-artifact line) and not pipeline glue. Engineered enough: one repeatable flag, one stored list, one rendered line, one skill clause.",
+   "refined_change": "plugins/scout/scripts/scout.py \u2014 (1) in the `close` subparser (next to `--unknown`): `s.add_argument(\"--under-test\", action=\"append\", dest=\"under_test\", help=\"exact version the verdict depends on, e.g. 'node 22.11.0', 'claude-code 2.1.292' (repeatable); omit only if nothing external can move under it\")`. (2) in `cmd_close`, add `\"under_test\": args.under_test or []` to the `st[\"close\"]` dict. (3) in `render_handoff`, inside `## Status`, directly after the `Verdict on the question:` line and before the `Learned:` block: `if c.get(\"under_test\"): L.append(\"Under test: \" + \"; \".join(c[\"under_test\"]) + \".\")`. No change to `cover_gaps` (the line is rendered unconditionally whenever stored). plugins/scout/skills/close/SKILL.md step 4 \u2014 add `[--under-test \"<name version>\"]...` to the close command line and one clause after the `--unknown` sentence: \"`--under-test`, repeatable: the exact versions the verdict depends on (runtime, dependency, protocol, OS), read from lockfiles or `--version` output, never guessed; it is what makes the verdict re-checkable when one of them moves. Omit only if nothing external can change under it.\""
+  },
+  {
+   "accept": true,
+   "reason": "Quote verified at the source: templates/spike-report.md carries the Effort line verbatim and references/handoff.md says a PROVEN ticket states which parts the spike \"did not touch\" so the estimate is not based on a throwaway build. Scout-ahead today: render_handoff's Status line prints box_line (\"3.2/8h logged, $1.40/$20 spawn-metered, 4.1h on the calendar\") with no caveat, and docs/handoff-format.md's \"How a spec-driven tool reads it\" never says what the box means, so a downstream reader can take the box as a sizing. The caveat sentence is absent from scout.py, every SKILL.md and both docs (grepped \"estimate\", \"sizing\", \"tests, error\"). It is one rendered constant, no new state, no dialog, no retrieval; state.json stays the record. Narrowed: the proposed `--untouched` flag is a duplicate of the existing repeatable `--unknown` (\"the conditions never exercised, the parts stubbed, the scale untested\"), which is the prp-spike \"still unknown\" list already borrowed in round 1, so it is dropped; the close skill gets one clause steering `--unknown` at a proven verdict instead of a new flag.",
+   "refined_change": "1) plugins/scout/scripts/scout.py, render_handoff, \"## Status\" block: directly after the line `L.append(f\"{status}. {len(st['directions'])} direction(s) tried. Box: {box_line(st)}.\")`, append one fixed line: `L.append(\"The box is what the scout spent, without tests, error handling or edge cases; it is not an estimate for the real build.\")`. No new state, no flag, unconditional. 2) docs/handoff-format.md, \"## Shape\" Status comment and the \"How a spec-driven tool reads it\" list: add one bullet \"**The box** is spend, not a sizing: the scout ran without tests, error handling or edge cases; the Still unknown list names the parts of a real build it did not touch.\" 3) plugins/scout/skills/close/SKILL.md, step 4, the `--unknown` sentence: extend to \"...the question raised and not answered; on a `proven` verdict, also the parts of the real build this scout did not touch (tests, error handling, edge cases, the other side of an interface), so nobody sizes the build off the box.\" No `--untouched` flag; `--unknown` already carries it. 4) docs/prior-art.md \"What was borrowed\" prp-spike bullet: append \"; the box is spend, not an estimate\".",
+   "conflicts_with": "The candidate's `--untouched` half duplicates the existing `cmd_close --unknown` (repeatable) and the \"Still unknown\" handoff section, which is the prp-spike \"still unknown\" list already borrowed in an earlier round; accepted without it.",
+   "priority": 4
+  },
+  {
+   "accept": true,
+   "conflicts_with": "None. The verdict enum, \"names the wall and why it is structural\" and \"most honest disproofs are conditional\" were borrowed from prp-spike earlier (docs/prior-art.md, \"What was borrowed\"); the reproduce command, the alternatives-considered burden and a Reproducing section were not, and none exists in scout.py, the close/handoff skills or docs/handoff-format.md (grep for repro/Reproduc/alternatives returns nothing).",
+   "priority": 3,
+   "reason": "Quote verified against Wirasm/prp main (references/evidence.md lines 60-71 \"Proving a negative\", templates/spike-report.md line 108 \"## Reproducing\"); it holds. Not already present: close/SKILL.md step 4 asks only for the structural wall; cmd_close stores no repro; render_handoff has no Reproducing section and Pointers lists branches, commits and transcripts only. It serves exploratory work directly: a disproven verdict is the one output of a scout a successor acts on without rebuilding, and \"could not make it work\" vs \"cannot work\" is exactly the inference-without-pushback failure the close skill already warns about for `inferred` decisions. It is engineered enough: one argparse flag, one field in the close dict in state.json, one rendered section, one refuse-check, one sentence in the skill. No dialog (the burden is stated in --verdict-note at the close boundary), no retrieval, no second record (lives in state.json `close.repro`, markdown rendered from it), pointers not copies (a branch plus a command is a pointer), Opus/spawn/budget rules untouched. A real scout is measurably better off: the handoff of a disproof becomes checkable rather than trusted.",
+   "refined_change": "1) plugins/scout/scripts/scout.py, `close` parser (around line 963): add `s.add_argument(\"--repro\", help=\"how to check the verdict: the command, run from the scout branch, and what to look at\")`. In `cmd_close` (line 528): before mutating state, `if args.verdict == \"disproven\" and not args.repro: die(\"--verdict disproven needs --repro: the exact command and what to look at, so the next person can check rather than trust\")`; store `\"repro\": args.repro` in the `st[\"close\"]` dict beside `verdict_note`. 2) `render_handoff` (line 277): after the `## Pointers` block and before `## Pre-registration`, when `c.get(\"repro\")` is set, append `## Reproducing`, blank line, `c[\"repro\"]`, blank line. Keep HANDOFF_VERSION = 1 (section is optional and additive). Optionally mirror the same section in `render_log`/`render_decisions` is NOT needed. 3) docs/handoff-format.md, the Shape block: add a line `## Reproducing         present when the close gave --repro; required for a disproven verdict: branch, command, what to look at` between Pointers and Pre-registration, and a matching entry under Fields. 4) plugins/scout/skills/close/SKILL.md step 4: add `[--repro \"<command, run from the scout branch, and what to look at>\"]` to the close command line, and extend the `disproven` sentence to: `disproven` carries a higher burden than `proven`, because \"could not make it work\" and \"cannot work\" look the same from the inside: before choosing it, the --verdict-note states that the approach was credible (how a competent engineer would do it, not the first thing tried), which obvious alternatives were considered and why they fail or were not tried, and the wall and why it is structural; --repro gives the exact command and what to look at so the next person can check rather than trust. If any of those cannot be stated, the verdict is `conditional` or `unanswered`, not `disproven`. 5) plugins/scout/skills/handoff/SKILL.md step 3 read-back: add \"a disproven verdict has a Reproducing section whose command runs\" to the checklist. Add a unit case alongside existing scout.py tests (if any) asserting `close --verdict disproven` without --repro exits non-zero and that the handoff of a close with --repro contains `## Reproducing`."
+  },
+  {
+   "accept": true,
+   "reason": "Quote verified against the fetched source (Wirasm/prp .agents/skills/prp-spike/references/framing.md lines 24, 31-32, 34: \"replace the adjective with a threshold\", \"Plausible \u2014 at least one must be a real possibility. If every kill criterion is far-fetched, the hypothesis is trivially true and the spike is theatre\", \"Where a threshold is genuinely unknown, say so explicitly and record the number the spike produces as a **finding** rather than a pass/fail\"). Not already present: start/SKILL.md step 1 only asks for \"the cheapest observation that would prove it cannot work\" and fixes it before the build; the earlier prp-spike borrow (prior-art.md \"What was borrowed\") covers pre-commitment and re-reading, not plausibility, adjective-to-threshold, or the baseline-as-finding escape. protocol.md 4a and scout.py store kill criteria as free text with no shape rule. The gap is real in practice: a derived criterion like \"kill if too slow\" is either theatre or gets a threshold invented after the number exists, which is exactly the rationalization step 1 already warns against. The change serves exploratory work (criteria are judged at pivot/close from evidence), breaks no rule (pre-registration stays deferred until measurable, which the escape explicitly respects; no dialog, no retrieval, no second record \u2014 the baseline wording lives in the existing kill-criterion string and the number lands as a note/learned line), and is one paragraph of skill text.",
+   "refined_change": "File: /Users/manoldonev/work/scout-ahead/plugins/scout/skills/start/SKILL.md, step 1. Immediately after the sentence \"Both are fixed now, before anything is built: deciding what counts as failure after seeing results turns a scout into a rationalization.\" insert one paragraph (same voice, no source attribution in the skill):\n\n\"A criterion is an observation: a number, an error, a behavior. Never an adjective. \"Too slow\", \"clean\", \"scalable\" are placeholders for a threshold that has not been decided; decide it now or the build decides it later. At least one kill criterion must be a real possibility: if every one is far-fetched, the question is trivially true and the scout is theatre. When the threshold is genuinely unknown, say so and write the criterion as \"record <metric> as a baseline finding\": the number the scout produces is the finding, not a pass or fail, and pre-registration waits until that number makes the question measurable (`/scout:handoff` or `/scout:variants` step 4).\"\n\nApply the same shape rule to a `--keep` criterion (\"keep if <observation>\"). No script change: `--kill`/`--keep` stay free-text in state.json; the baseline number is recorded with the existing `note` command and surfaces in `--learned` at close. Optional, not required: protocol.md rule 4a may gain the half-sentence \"observable, at least one plausible, a baseline finding when the threshold is unknown\" \u2014 but do not duplicate the paragraph there.",
+   "conflicts_with": "",
+   "priority": 2
+  },
+  {
+   "accept": true,
+   "reason": "Quote verified against Wirasm/prp references/framing.md '## Sizing' (both sentences present verbatim). Not already present: think/SKILL.md 'When the direction is spent' only says offer pivot/close and do not run past the box; nothing forbids mocking the part a parked question is about, nothing says to close once the question is answered, nothing about a runaway direction. The close skill's `--unknown` ('the parts stubbed') records stubs after the fact but does not stop a scout from stubbing the very thing under test, and under the no-asking rule that is the path of least resistance. Serves build-to-discover work directly (an access blocker is the commonest reason a spike 'proves' nothing). Breaks no rule: blocked \u2192 `scout question` is exactly park-and-raise-at-a-boundary; early close and a narrowing pivot use existing commands; no dialog, retrieval, or second record. Three sentences of skill text, engineered enough. Not a duplicate of the prp-spike borrows already listed (kill criteria, proved/inferred, verdicts, still-unknown).",
+   "refined_change": "File: /Users/manoldonev/work/scout-ahead/plugins/scout/skills/think/SKILL.md, section '## When the direction is spent'. After the existing two sentences, append one short paragraph (three lines):\n\n\"Three sizes of 'spent' are easy to miss. Blocked on access, not knowledge (credentials, a licence, a decision only the operator can make): park it with `scout question` and stop that thread; never stub or mock the part the question is about, because a mock of the unknown part proves nothing about it (a stub elsewhere is fine and goes under `--unknown` at the close). Answered early, including a first build that disproves the hypothesis: say so and offer `/scout:close` now; do not keep building to justify the box. Growing with no verdict in sight once the box line shows more than half the hours or dollars gone: the question is unfalsifiable or several at once; offer a `/scout:pivot` whose direction names the one falsifiable part.\"\n\nNo change to scout.py, protocol.md or any other skill; the box line the third sentence refers to is the existing `box_line()` output already rendered into log.md.",
+   "conflicts_with": "",
+   "priority": 3
+  },
+  {
+   "accept": true,
+   "conflicts_with": "None. Earlier prp-spike borrows (kill criteria, proved/inferred, verdict, still-unknown list) and hordev borrows (one axis, criteria-first, no hybrid, losers' strengths) do not cover sensitivity, cross-arm cache warming, spread/warmup, or naming the judge; grep of docs/protocol.md, README.md, docs/handoff-format.md, all skills/*/SKILL.md and scripts/scout.py (cmd_prereg, lines 551-556) finds none of these.",
+   "priority": 3,
+   "reason": "Quote verified against Wirasm/prp main at plugins/prp-core/skills/prp-spike/references/evidence.md lines 55, 58, 75-76 (verbatim, British \"judgement\"). Not present anywhere in scout-ahead. It serves exactly the variants-as-evidence and prereg-before-scored-run steps: arms are sibling worktrees on one machine, so a cache or DB one arm warms for another is a real trap today, and a pass rule with no spread tolerance is unfalsifiable. Skill text only, no new command, no dialog, no second record; prereg's state.json shape is unchanged (the spread/warmup is part of the free-text pass rule). Trimmed from the candidate: the \"who judged\" sentence goes in variants step 3 where the comparison note is written, not handoff step 1, which is prereg.",
+   "refined_change": "Two files, skill text only.\n\n1. plugins/scout/skills/variants/SKILL.md, step 3 (\"Compare the arms as evidence...\"): after the sentence ending \"...is the usual useful outcome.\" insert three sentences: \"Before trusting a measured difference, change the thing under test and check the number moves; a benchmark dominated by something the arms share says nothing about them. Arms share one machine, so name any cache, service or database one arm could have warmed for another, and discard the warm run. When the criterion is taste rather than a measurement, the comparison note names who judged and on what.\" No change to the `note` command example.\n\n2. plugins/scout/skills/handoff/SKILL.md, step 1, after \"A question is measurable when two arms can be named, a pass rule stated, and a cost bounded.\" append: \"A pass rule states how many runs it discards as warmup and the spread it tolerates across the rest; one run is noise, and the best number is not the result.\" The same sentence is NOT repeated in variants step 4, which already points at the same prereg command; cmd_prereg and the state.json prereg shape stay as they are (the spread/warmup live inside the free-text --pass-rule).\n\n3. docs/prior-art.md \"What was borrowed, and from where\": extend the prp-spike bullet with \"; sensitivity check and the cross-arm warm-cache trap before trusting a measured difference; warmup discarded and the spread stated in the pass rule; whose judgement, on what, when the criterion is taste\"."
+  }
+ ]
+}
