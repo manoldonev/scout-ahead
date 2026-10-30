@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -79,7 +80,7 @@ class ScoutRepo(unittest.TestCase):
         self.assertEqual(st["directions"][0]["learned"], "cache is per-process")
         self.assertIn("superseded by: direction 2", (self.repo / "scouting" / slug / "decisions.md").read_text())
 
-        self.scout("answer", "1", "no, per process")
+        self.scout("answer", "Q1", "no, per process")
         tp = self.transcript("loop.jsonl", [{"type": "user", "message": {"content": "record this: ship the bypass"}}])
         self.scout("decide", "ship the bypass", "--by", "operator", "--evidence", str(tp))
         self.scout("decide", "cache eviction policy", "--by", "open")
@@ -167,7 +168,7 @@ class ScoutRepo(unittest.TestCase):
         self.assertEqual(self.scout("handoff", check=False).returncode, 0)
         # simulate a renderer regression: the open question list cannot show a question whose text is swallowed
         import subprocess as sp
-        script = SCRIPT.read_text().replace('L.append(f"- {q[\'text\']}")', 'pass')
+        script = SCRIPT.read_text().replace('L.append(f"- {question_label(q)}")', 'pass')
         broken = self.repo / "broken.py"; broken.write_text(script)
         r = sp.run([sys.executable, str(broken), "handoff"], cwd=self.repo, text=True, capture_output=True)
         self.assertEqual(r.returncode, 2)
@@ -313,11 +314,84 @@ class ScoutRepo(unittest.TestCase):
     def test_box_warning(self):
         self.scout("start", "q box", "--hours", "1", "--usd", "1", "--no-branch")
         r = self.scout("spent", "--hours", "1.5")
-        self.assertIn("BOX: hours spent", r.stderr)
+        self.assertIn("BOX: 1.5/1h logged. Pivot or close.", r.stderr)
         r = self.scout("spent", "--usd", "0.5")
-        self.assertNotIn("dollars", r.stderr)
+        self.assertNotIn("spawn-metered", r.stderr)
         r = self.scout("spent", "--usd", "0.5")
-        self.assertIn("BOX: dollars spent", r.stderr)
+        self.assertIn("BOX: $1.00/$1 spawn-metered. Pivot or close.", r.stderr)
+        status = self.scout("status").stdout
+        self.assertLess(status.index("q-box"), status.index("    BOX: $1.00/$1 spawn-metered"))
+        self.assertLess(status.index("    BOX: $1.00/$1 spawn-metered"), status.index("    box:"))
+
+        self.scout("start", "q cal", "--hours", "0.0001", "--no-branch")
+        time.sleep(0.5)
+        r = self.scout("note", "still going")
+        self.assertIn("BOX:", r.stderr)
+        self.assertIn("on the calendar against a 0.0001h box (0.0h logged)", r.stderr)
+        env = dict(os.environ, CLAUDE_PLUGIN_ROOT=str(PLUGIN))
+        payload = json.dumps({"session_id": "s1", "transcript_path": "/nowhere/s1.jsonl", "cwd": str(self.repo), "source": "compact"})
+        ctx = json.loads(sh(["bash", str(HOOK)], self.repo, stdin=payload, env=env).stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertTrue(ctx.splitlines()[0].startswith("BOX:"), ctx)
+        self.assertIn("Context was just compacted", ctx)
+
+        self.scout("close", "--outcome", "kill")
+        self.assertNotIn("BOX:", self.scout("status").stdout.split("q-cal")[1], "a closed scout has nothing to pivot or close")
+
+    def test_variants_refused_past_box(self):
+        self.scout("start", "q var box", "--usd", "1")
+        r = self.scout("variants", "2", "--usd", "1", "--dry-run", check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("run would exceed the box: $1.00 left; fewer arms, a lower --usd, or pivot/close", r.stderr)
+        self.assertEqual(self.state("q-var-box")["variants"], [])
+
+    def test_question_ids_and_assumptions(self):
+        self.scout("start", "q ids", "--no-branch")
+        self.assertIn("Q1 parked", self.scout("question", "is the cache shared?").stdout)
+        self.scout("question", "which region?", "--assuming", "eu-west only")
+        self.scout("question", "LRU or TTL?", "--assuming", "LRU")
+        out = self.scout("answer", "Q1", "no, per process").stdout
+        self.assertNotIn("assumed:", out)
+        st = self.state("q-ids")
+        self.assertEqual([q["id"] for q in st["questions"]], ["Q1", "Q2", "Q3"])
+        self.assertEqual(st["questions"][1]["assuming"], "eu-west only")
+
+        out = self.scout("answer", "2", "us-east as well").stdout
+        self.assertIn("Q2 answered", out)
+        self.assertIn("assumed: eu-west only (since ", out)
+        self.assertIn("answered: us-east as well; if they differ, re-check the work since then", out)
+        self.assertEqual(self.state("q-ids")["questions"][1]["answered"], "us-east as well")
+        r = self.scout("answer", "Q2", "again", check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("Q2 is already answered", r.stderr)
+        r = self.scout("answer", "Q9", "x", check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("no question Q9", r.stderr)
+
+        out = self.scout("pivot", "next direction", "--learned", "x").stdout
+        self.assertIn("  Q3: LRU or TTL? (proceeding on: LRU)", out)
+        self.assertIn("- Q3: LRU or TTL? (proceeding on: LRU)\n", self.scout("handoff", "--print").stdout)
+        self.assertIn("Parked questions (raise only at a pivot, a close, or when asked): Q3: LRU or TTL? (proceeding on: LRU)",
+                      self.scout("context").stdout)
+        log = (self.repo / "scouting" / "q-ids" / "log.md").read_text()
+        self.assertIn("- [x] Q2: which region? (proceeding on: eu-west only) → us-east as well", log)
+
+        st = self.state("q-ids")
+        for q in st["questions"]:
+            del q["id"]
+        (self.repo / "scouting" / "q-ids" / "state.json").write_text(json.dumps(st))
+        self.assertIn("      Q3: LRU or TTL? (proceeding on: LRU)", self.scout("status", "-v").stdout, "old state gets ids by position")
+        self.assertIn("Q3 answered", self.scout("answer", "Q3", "LRU", "--scout", "q-ids").stdout)
+
+    def test_stakes_rendered(self):
+        env = dict(os.environ, CLAUDE_PLUGIN_ROOT=str(PLUGIN))
+        self.scout("start", "q stakes", "--no-branch", "--stakes", "s")
+        log = (self.repo / "scouting" / "q-stakes" / "log.md").read_text()
+        self.assertIn("\nStakes: s\nOpened ", log)
+        out = self.scout("handoff", "--print").stdout
+        self.assertIn("Stakes: s", out.split("## Question")[1].split("## Status")[0])
+        payload = json.dumps({"session_id": "s1", "transcript_path": "/nowhere/s1.jsonl", "cwd": str(self.repo), "source": "startup"})
+        ctx = json.loads(sh(["bash", str(HOOK)], self.repo, stdin=payload, env=env).stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("Stakes: s", ctx)
 
     def test_hook_records_session_and_injects(self):
         env = dict(os.environ, CLAUDE_PLUGIN_ROOT=str(PLUGIN))

@@ -33,7 +33,7 @@ Decisions are recovered after the fact, from the code and from what the operator
 
    Then re-run the inferred ones. By the close the setup exists, and the experiment that looked expensive mid-run usually costs minutes; an inference is where a scout is most confidently wrong, because nothing pushed back. Re-record what you can prove with `--supersedes` on the inferred id; leave the rest labelled.
 
-3. Raise the parked questions with the operator, all at once, in prose; record the answers with `answer`. This is the last boundary.
+3. Raise the parked questions with the operator, all at once, in prose. Ask each one openly, with its id and the pointer it concerns. Show an assumption as what was built, never as the likely answer, and accept "I don't know": the question then stays open and reaches the handoff. Record the answers with `answer Q<n> -`, their words on stdin through a quoted heredoc; when an answer differs from the assumption, re-check the work built on it before the verdict. This is the last boundary.
 
 4. Close. Re-read the kill and keep criteria (K1.., P1.. in the log) before choosing, not after, and re-read every open stub (`recover` lists them) against the question: a stub of the part the question is about makes the verdict `unanswered`.
 

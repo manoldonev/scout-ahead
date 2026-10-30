@@ -46,7 +46,7 @@ def git(args, cwd=None, check=True):
     return r.stdout.strip()
 
 
-STDIN_FIELDS = ("text", "evidence", "learned", "verdict_note")
+STDIN_FIELDS = ("text", "evidence", "learned", "verdict_note", "repro", "blast_radius")
 
 
 def _text(v):
@@ -88,7 +88,14 @@ def load(root, slug):
     p = root / slug / STATE
     if not p.exists():
         die(f"no scout '{slug}' under {root}")
-    return json.loads(p.read_text())
+    return normalize(json.loads(p.read_text()))
+
+
+def normalize(st):
+    """Upgrade older state shapes in place: questions parked before ids existed get Q1..Qn by position."""
+    for i, q in enumerate(st.get("questions", []), 1):
+        q.setdefault("id", f"Q{i}")
+    return st
 
 
 def save(root, st):
@@ -134,7 +141,7 @@ def list_scouts(root):
         return out
     for d in sorted(root.iterdir()):
         if (d / STATE).exists():
-            out.append(json.loads((d / STATE).read_text()))
+            out.append(normalize(json.loads((d / STATE).read_text())))
     return out
 
 
@@ -209,6 +216,14 @@ def criteria_lines(st, keep_label, kill_label):
     return L
 
 
+def open_questions(st):
+    return [q for q in st["questions"] if not q.get("answered")]
+
+
+def question_label(q):
+    return f"{q['id']}: {q['text']}" + (f" (proceeding on: {q['assuming']})" if q.get("assuming") else "")
+
+
 def open_stubs(st):
     return [s for s in st.get("stubs", []) if not s.get("unstubbed")]
 
@@ -258,10 +273,29 @@ def box_line(st):
     return f"{h}, {u}, {hours_elapsed(st):.1f}h on the calendar"
 
 
+def breaches(st):
+    """One line per clock that rang. A closed scout has nothing left to pivot or close."""
+    if st["status"] != "open":
+        return []
+    b, sp = st["box"], st["spent"]
+    out = []
+    if b.get("usd") is not None and sp["usd"] >= b["usd"]:
+        out.append(f"BOX: ${sp['usd']:.2f}/${b['usd']:g} spawn-metered. Pivot or close.")
+    if b.get("hours") is not None:
+        if sp["hours"] >= b["hours"]:
+            out.append(f"BOX: {sp['hours']:.1f}/{b['hours']:g}h logged. Pivot or close.")
+        cal = hours_elapsed(st)
+        if cal > b["hours"]:
+            out.append(f"BOX: {cal:.1f}h on the calendar against a {b['hours']:g}h box ({sp['hours']:.1f}h logged). Pivot or close.")
+    return out
+
+
 # ---------------------------------------------------------------- renders
 
 def render_log(st):
     L = [f"# Scout: {st['question']}", "", GENERATED, ""]
+    if st.get("stakes"):
+        L.append(f"Stakes: {st['stakes']}")
     L.append(f"Opened {short(st['opened_at'])} on branch `{st['branch'] or '(no branch)'}` from `{st['base'][:12] if st['base'] else '?'}`.")
     b = st["box"]
     L.append(f"Box: {b.get('hours', '—')} hours, ${b.get('usd', '—')}. Spent: {box_line(st)}.")
@@ -308,7 +342,7 @@ def render_log(st):
         L.append("")
         for q in st["questions"]:
             mark = "x" if q.get("answered") else " "
-            L.append(f"- [{mark}] {q['text']}" + (f" → {q['answered']}" if q.get("answered") else ""))
+            L.append(f"- [{mark}] {question_label(q)}" + (f" → {q['answered']}" if q.get("answered") else ""))
         L.append("")
     if st["status"] == "closed":
         L.append(f"## Closed {short(st['closed_at'])}: {st['outcome']}")
@@ -368,6 +402,9 @@ def render_handoff(st, top=None):
     L.append("")
     L.append(st["question"])
     L.append("")
+    if st.get("stakes"):
+        L.append(f"Stakes: {st['stakes']}")
+        L.append("")
     L.append("## Status")
     L.append("")
     status = st["status"] + (f", {st['outcome']}" if st.get("outcome") else "")
@@ -404,13 +441,13 @@ def render_handoff(st, top=None):
     L.append("## Open questions")
     L.append("")
     opens = [d for d in open_decisions(st)] 
-    qs = [q for q in st["questions"] if not q.get("answered")]
+    qs = open_questions(st)
     if not opens and not qs:
         L.append("(none)")
     for d in opens:
         L.append(f"- {d['id']}: {d['text']}" + (f" — ask: {d['ask']}" if d.get("ask") else ""))
     for q in qs:
-        L.append(f"- {q['text']}")
+        L.append(f"- {question_label(q)}")
     L.append("")
     L.append("## Pointers")
     L.append("")
@@ -488,6 +525,7 @@ def cmd_start(args):
     st = {
         "slug": slug,
         "question": args.question,
+        "stakes": args.stakes,
         "opened_at": now(),
         "closed_at": None,
         "status": "open",
@@ -525,16 +563,20 @@ def cmd_note(args):
     _entry(st, "note", args.text)
     save(root, st)
     print("noted")
+    warn_box(st)
 
 
 def cmd_question(args):
     read_stdin_fields(args)
     root = scouts_root(args)
     st = load(root, current_slug(root, args.scout))
-    st["questions"].append({"text": args.text, "at": now(), "direction": len(st["directions"]), "answered": None})
+    qid = f"Q{len(st['questions']) + 1}"
+    st["questions"].append({"id": qid, "text": args.text, "assuming": args.assuming, "at": now(),
+                            "direction": len(st["directions"]), "answered": None})
     _entry(st, "question parked", args.text)
     save(root, st)
-    print(f"parked for the next boundary ({len([q for q in st['questions'] if not q['answered']])} open)")
+    print(f"{qid} parked for the next boundary ({len(open_questions(st))} open)")
+    warn_box(st)
 
 
 def cmd_stub(args):
@@ -566,16 +608,23 @@ def cmd_unstub(args):
 
 
 def cmd_answer(args):
+    read_stdin_fields(args)
     root = scouts_root(args)
     st = load(root, current_slug(root, args.scout))
-    idx = args.index - 1
-    opens = [q for q in st["questions"] if not q["answered"]]
-    if idx < 0 or idx >= len(opens):
-        die(f"no open question #{args.index}")
-    opens[idx]["answered"] = args.text
-    _entry(st, "question answered", f"{opens[idx]['text']} → {args.text}")
+    m = re.fullmatch(r"[Qq]?(\d+)", args.id.strip())
+    qid = f"Q{int(m.group(1))}" if m else args.id
+    hit = [q for q in st["questions"] if q["id"] == qid]
+    if not hit:
+        die(f"no question {qid}")
+    q = hit[0]
+    if q.get("answered"):
+        die(f"{qid} is already answered: {q['answered']}")
+    q["answered"] = args.text
+    _entry(st, "question answered", f"{q['text']} → {args.text}")
     save(root, st)
-    print("answered")
+    print(f"{qid} answered")
+    if q.get("assuming"):
+        print(f"assumed: {q['assuming']} (since {short(q['at'])}); answered: {args.text}; if they differ, re-check the work since then")
 
 
 def _is_file(text):
@@ -657,6 +706,7 @@ def cmd_decide(args):
     _entry(st, f"decision {d['id']} ({by_label(d)})", args.text)
     save(root, st)
     print(f"{d['id']} recorded, settled by {by_label(d)}" + (f"; supersedes {', '.join(d['supersedes'])}" if d["supersedes"] else ""))
+    warn_box(st)
 
 
 def cmd_spent(args):
@@ -672,11 +722,8 @@ def cmd_spent(args):
 
 
 def warn_box(st):
-    b, sp = st["box"], st["spent"]
-    if b.get("hours") is not None and sp["hours"] >= b["hours"]:
-        print(f"BOX: hours spent ({sp['hours']:.1f}) reached the box ({b['hours']}). Pivot or close.", file=sys.stderr)
-    if b.get("usd") is not None and sp["usd"] >= b["usd"]:
-        print(f"BOX: dollars spent (${sp['usd']:.2f}) reached the box (${b['usd']}). Pivot or close.", file=sys.stderr)
+    for line in breaches(st):
+        print(line, file=sys.stderr)
 
 
 def cmd_pivot(args):
@@ -705,15 +752,15 @@ def cmd_pivot(args):
     save(root, st)
     set_current(root, st["slug"])
     print(f"direction {n_new - 1} closed; direction {n_new} open: {args.direction}")
-    if operator_marked or open_decisions(st) or [q for q in st["questions"] if not q["answered"]]:
+    if operator_marked or open_decisions(st) or open_questions(st):
         print("boundary reached — raise the parked questions and open decisions with the operator now:")
         for d in operator_marked:
             print(f"  {d['id']} (operator's, superseded by this pivot): {d['text']}")
         for d in open_decisions(st):
             print(f"  {d['id']}: {d['text']}")
-        for q in st["questions"]:
-            if not q["answered"]:
-                print(f"  ? {q['text']}")
+        for q in open_questions(st):
+            print(f"  {question_label(q)}")
+    warn_box(st)
 
 
 def check_verdict_evidence(st, args):
@@ -804,7 +851,7 @@ def cover_gaps(st, text):
             if f"`{a['branch']}`" not in text:
                 gaps.append(a["branch"])
     for q in st["questions"]:
-        if not q.get("answered") and q["text"] not in text:
+        if not q.get("answered") and f"- {question_label(q)}" not in text:
             gaps.append("question: " + q["text"][:40])
     for sb in open_stubs(st):
         if f"- stubbed: {sb['id']} {sb['text']}" not in text:
@@ -822,22 +869,29 @@ def cmd_status(args):
     for st in scouts:
         mark = "*" if st["slug"] == cur else " "
         print(f"{mark} {st['slug']}  [{st['status']}{', ' + st['outcome'] if st.get('outcome') else ''}]  {st['question']}")
+        for line in breaches(st):
+            print(f"    {line}")
         print(f"    box: {box_line(st)}")
         for i, d in enumerate(st["directions"], 1):
             state = "open" if not d.get("closed_at") else d.get("closed_by", "closed")
             print(f"    direction {i} ({state}): {d['text']}")
         od = open_decisions(st)
-        qs = [q for q in st["questions"] if not q["answered"]]
+        qs = open_questions(st)
         print(f"    decisions: {len(live_decisions(st))} live, {len(od)} open; parked questions: {len(qs)}")
         if args.verbose:
             for d in od:
                 print(f"      {d['id']} open: {d['text']}")
             for q in qs:
-                print(f"      ? {q['text']}")
+                print(f"      {question_label(q)}")
 
 
-def context_text(st, current_session=None):
-    L = [f"Open scout: {st['question']} (scouting/{st['slug']}/)"]
+def context_text(st, current_session=None, head=None):
+    L = breaches(st)
+    if head:
+        L += [head, ""]
+    L.append(f"Open scout: {st['question']} (scouting/{st['slug']}/)")
+    if st.get("stakes"):
+        L.append(f"Stakes: {st['stakes']}")
     L.append(f"Branch: {st['branch'] or '(none)'}. Box: {box_line(st)}.")
     L += criteria_lines(st, "Keep if", "Kill when")
     left = [(i, d) for i, d in enumerate(st["directions"], 1) if d.get("closed_at")]
@@ -854,9 +908,9 @@ def context_text(st, current_session=None):
     if live:
         L.append("Decisions in force: " + "; ".join(f"{d['id']} {d['text']} [{by_label(d)}]" for d in live))
     od = open_decisions(st)
-    qs = [q for q in st["questions"] if not q["answered"]]
+    qs = open_questions(st)
     if qs:
-        L.append("Parked questions (raise only at a pivot, a close, or when asked): " + "; ".join(q["text"] for q in qs))
+        L.append("Parked questions (raise only at a pivot, a close, or when asked): " + "; ".join(question_label(q) for q in qs))
     stubs = open_stubs(st)
     if stubs:
         L.append("Stubbed so far (re-read each against the question before any verdict): " + "; ".join(f"{sb['id']} {sb['text']}" for sb in stubs))
@@ -909,7 +963,7 @@ def cmd_hook_session_start(args):
     head = {"compact": "Context was just compacted. The scout below is the side constraint that survives it.",
             "resume": "Resumed session. The scout below is where the previous session left off.",
             "clear": "Context cleared. An open scout is still in progress."}.get(source, "An open scout is in progress in this repository.")
-    text = head + "\n\n" + context_text(st, sess["session_id"])
+    text = context_text(st, sess["session_id"], head)
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}}))
 
 
@@ -1116,6 +1170,10 @@ def cmd_variants(args):
     st["_root"] = str(root)
     if not 2 <= args.n <= 4:
         die("variants: n must be 2..4; more arms stop being evidence and start being noise")
+    if st["box"].get("usd") is not None:
+        left = st["box"]["usd"] - st["spent"]["usd"]
+        if args.n * args.usd > left:
+            die(f"run would exceed the box: ${max(left, 0):.2f} left; fewer arms, a lower --usd, or pivot/close")
     top = root.parent
     if git(["status", "--porcelain"], cwd=top, check=False) and not args.allow_dirty:
         die("working tree is dirty; commit first so every arm starts from the same base (or --allow-dirty)")
@@ -1157,17 +1215,22 @@ def main(argv=None):
     s.add_argument("--kill", action="append", help="kill criterion, fixed before the build (repeatable)")
     s.add_argument("--keep", action="append", help="keep criterion: what would make the answer yes (repeatable)")
     s.add_argument("--direction", help="first direction (default: the question; pick the one most likely to kill the idea)")
+    s.add_argument("--stakes", help="the decision waiting on the answer: what yes changes, what no changes")
     s.add_argument("--slug")
     s.add_argument("--worktree", action="store_true", help="work in a new worktree instead of a branch in place")
     s.add_argument("--no-branch", action="store_true")
     s.set_defaults(fn=cmd_start)
 
-    for name, fn, help_ in [("note", cmd_note, "append a note to the current direction"),
-                            ("question", cmd_question, "park a question for the next boundary")]:
-        s = sub.add_parser(name, help=help_)
-        s.add_argument("text", help="'-' reads stdin")
-        s.add_argument("--scout")
-        s.set_defaults(fn=fn)
+    s = sub.add_parser("note", help="append a note to the current direction")
+    s.add_argument("text", help="'-' reads stdin")
+    s.add_argument("--scout")
+    s.set_defaults(fn=cmd_note)
+
+    s = sub.add_parser("question", help="park a question for the next boundary; it gets an id Q<n> that never shifts")
+    s.add_argument("text", help="'-' reads stdin")
+    s.add_argument("--assuming", help="the default the build proceeds on until the question is answered")
+    s.add_argument("--scout")
+    s.set_defaults(fn=cmd_question)
 
     s = sub.add_parser("stub", help="record a fake as it is made: what was stubbed, mocked or hard-coded")
     s.add_argument("text", help="'-' reads stdin")
@@ -1180,9 +1243,9 @@ def main(argv=None):
     s.add_argument("--scout")
     s.set_defaults(fn=cmd_unstub)
 
-    s = sub.add_parser("answer", help="answer parked question #N")
-    s.add_argument("index", type=int)
-    s.add_argument("text")
+    s = sub.add_parser("answer", help="answer parked question Q<n>, by its id")
+    s.add_argument("id", help="Q3, or 3")
+    s.add_argument("text", help="'-' reads stdin")
     s.add_argument("--scout")
     s.set_defaults(fn=cmd_answer)
 
@@ -1214,8 +1277,8 @@ def main(argv=None):
     s.add_argument("--outcome", choices=["kill", "commit"], required=True, help="what happens to the work")
     s.add_argument("--verdict", choices=["proven", "disproven", "conditional", "unanswered"], help="what happened to the question")
     s.add_argument("--verdict-note", help="for conditional: the thing held fixed; for disproven: why the wall is structural; '-' reads stdin")
-    s.add_argument("--repro", help="command, run from the scout branch, and what to look at; required for disproven")
-    s.add_argument("--blast-radius", help="conditional only, and required there: what depends on the constraint held fixed")
+    s.add_argument("--repro", help="command, run from the scout branch, and what to look at; required for disproven; '-' reads stdin")
+    s.add_argument("--blast-radius", help="conditional only, and required there: what depends on the constraint held fixed; '-' reads stdin")
     s.add_argument("--fired", action="append", metavar="K1|P2", help="a kill (K) or keep (P) criterion that fired (repeatable)")
     s.add_argument("--unknown", action="append", help="what this scout did not settle (repeatable)")
     s.add_argument("--tried")

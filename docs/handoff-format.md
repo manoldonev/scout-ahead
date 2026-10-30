@@ -11,10 +11,10 @@ again.
 # Handoff: <question>
 <!-- scout-ahead handoff v1; plain markdown, fixed headings; written <timestamp> -->
 
-## Question
+## Question             the question, and its stakes when `start` recorded them
 ## Status               status, directions, box, keep/kill criteria and which fired, verdict on the question, blast radius, learned
 ## Decisions            table: id | decision | settled by | evidence | superseded by
-## Open questions       bullets: open decisions (D-ids, with the question to ask) and parked questions
+## Open questions       bullets: open decisions (D-ids, with the question to ask) and parked questions (Q-ids, with what the build proceeded on)
 ## Pointers             bullets: branch, base, head, directions (with what each taught), variant arms, transcripts, log, decisions
 ## Reproducing          present only when the close gave a repro: the command, run from the scout branch, and what to look at
 ## Pre-registration     present only when a question became measurable
@@ -39,8 +39,12 @@ The version marker in the HTML comment lets a reader detect the shape without pa
   cited against and `+dirty` when the tree had uncommitted changes then. A
   superseded decision stays in the table with `superseded by: direction N`; the reader
   treats it as history, not as a constraint.
+- **Question.** The question verbatim, followed by `Stakes: …` when the scout recorded the
+  decision waiting on the answer and what yes and no would each change.
 - **Open questions.** Everything the scout did not settle: open decisions by id, and parked
-  questions nobody answered at a boundary.
+  questions nobody answered at a boundary, as `Q<n>: <question> (proceeding on: <default>)`.
+  The id never shifts; the default is what the build was done under, so an answer that
+  differs from it means re-checking that work.
 - **Pointers.** Branch and commits resolve with `git rev-parse`; transcript paths are the
   raw session traces (`~/.claude/projects/…/<session>.jsonl`), which beat structured notes
   for a successor. The generator marks a branch `(missing)`, `(no commits past base)` or

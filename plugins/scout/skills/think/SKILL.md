@@ -20,13 +20,15 @@ Read `scouting/<slug>/log.md` first if it is not already in context (the open sc
   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scout.py" note "<thread, in one sentence>"
   ```
 
+- Before parking a question, try to settle it without the operator. If a run on the scout branch could answer it, run it and note the result. If a default is cheap to reverse, take it, keep building, and park the question with the default it proceeds on (`--assuming`). Park a bare question only when the operator alone can settle it.
+
 - Questions you would ask the operator mid-build go to the parking lot, not to the operator:
 
   ```
-  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scout.py" question "<the question>"
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scout.py" question "<the question>" [--assuming "<the default the build proceeds on>"]
   ```
 
-  They are raised at a boundary: a pivot, a close, or when the operator asks.
+  Each gets an id (Q1, Q2, …) that never shifts. They are raised at a boundary: a pivot, a close, or when the operator asks.
 
 - Every fake is recorded when you make it (a mocked call, a fixture, a hard-coded value), and unstubbed with a pointer when the real thing replaces it:
 
@@ -51,7 +53,9 @@ EOF
 
 ## When the direction is spent
 
-Say so in one line and offer `/scout:pivot <new direction>` or `/scout:close`. Do not keep going past the box: when the box line in the log says the hours or dollars are spent, the next message is a pivot or a close.
+Say so in one line and offer `/scout:pivot <new direction>` or `/scout:close`. Do not keep going past the box: a line starting `BOX:` in any output (a command's, `status`, the top of the session-start context) is the ring, and the next message is a pivot or a close. It says which clock rang: dollars metered from spawns, hours logged, or hours on the calendar.
+
+Three shapes of "spent" are easy to miss. Blocked on access, not knowledge (credentials, a license, a decision only the operator can make): park it with `question` and stop that thread; never mock the part the question is about, because a mock of the unknown part proves nothing about it. Answered early, including a first build that disproves the idea: say so and offer `/scout:close` now; do not keep building to justify the box. Growing with no verdict in sight once more than half the box is gone: the question is unfalsifiable or several at once; offer a `/scout:pivot` whose direction names the one falsifiable part.
 
 ## Never
 

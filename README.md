@@ -44,6 +44,7 @@ else: no tracker, no pipeline, no project layout.
 | `/scout:start <question> [--hours N] [--usd N] [--kill "…"]` | opens the scout: folder, log, box, kill criteria, branch `scout/<slug>`; then explores the code before anything else |
 | `/scout:think` | conversation mode: think out loud, get prose and evidence back; a decision is recorded only when you say "record this" |
 | `/scout:note <text>` | append to the log |
+| `stub <text>` / `unstub S<n> <pointer>` (script commands, run from `/scout:think`) | record a fake (a mock, a fixture, a hard-coded value) when it is made, and mark it replaced with a pointer to the real thing; open stubs survive compaction, are re-read before the verdict, and are listed under Still unknown |
 | `/scout:variants <n> [question]` | 2 to 4 arms of one question in separate worktrees, each a capped `claude -p` on Opus, compared as evidence |
 | `/scout:pivot <new direction>` | close the current direction with what it taught, mark superseded decisions, open the next; the common path |
 | `/scout:close kill\|commit` | recover decisions from the diff and the transcript, tag each operator / code (proved or inferred) / open, give the question a verdict (proven / disproven / conditional / unanswered), write tried / learned / thrown away / still unknown |

@@ -18,11 +18,18 @@ common path.
 
 ## Rules
 
-1. **Explore the code before deciding anything.** `start` ends with a note that says what
-   the code says. Agents find most blockers in code, not in specs.
-2. **No asking mid-build.** A question that comes up while building is parked
-   (`scout question`) and raised at a boundary: a pivot, a close, or when the operator asks.
-   The pivot and close commands print the parked list so the boundary cannot be skipped.
+1. **Explore the code before deciding anything.** `start` records why the question is worth
+   asking (the decision waiting on it, and what yes and no would each change; a question whose
+   yes and no lead to the same next action is not opened), probes the platform gates it rests
+   on with one command each, and ends with a note that says what the code says. Agents find
+   most blockers in code, not in specs.
+2. **No asking mid-build.** A question that comes up while building is first settled by a run
+   if a run can settle it, and otherwise parked (`scout question`) and raised at a boundary: a
+   pivot, a close, or when the operator asks. A parked question gets an id (`Q<n>`) that never
+   shifts and, when the build goes on under a cheap-to-reverse default, that default
+   (`--assuming`). The pivot and close commands print the parked list so the boundary cannot be
+   skipped; there each question is asked openly, the assumption shown as what was built, not as
+   the likely answer, and "I don't know" leaves it open.
 3. **Curated, not retrieved.** Nothing is pulled into context by similarity. A successor
    reads the log and the raw transcript, which the hook records and re-injects.
 4. **Decisions are written at the end of a direction, not the start.** `decisions.md` is
@@ -59,7 +66,10 @@ common path.
    the comparison.
 7. **Every spawn has a dollar cap**, enforced by the CLI between turns. The scout's own box is
    metered from spawn costs plus what the operator logs (`scout spent`); the interactive
-   session's own bill is not visible to the plugin and is not claimed.
+   session's own bill is not visible to the plugin and is not claimed. A breached box rings as
+   a `BOX:` line naming the clock (dollars metered, hours logged, or hours on the calendar) on
+   the commands used mid-build, under the scout in `status`, and first in the session-start
+   payload. `variants` refuses a run whose arms' caps would exceed the dollars left.
 8. **No dependence** on agent teams running headless, on credential pass-through, or on a
    long-lived session surviving compaction without the hook. Opus by default for anything the
    plugin spawns.
@@ -70,11 +80,12 @@ common path.
 
 The `SessionStart` hook runs on `startup`, `resume`, `compact` and `clear`. It writes the
 session id and transcript path to `scouting/.session.json` (gitignored), appends them to the
-open scout's `sessions[]`, and emits the open scout's question, the directions already
-tried and left (each with what it taught and the observation that turned it), current
-direction, last notes, decisions in force, parked questions, open stubs and transcript paths
-as additional context. On `compact` it says so, because automatic compaction keeps only a
-fraction of side constraints.
+open scout's `sessions[]`, and emits as additional context any `BOX:` breach lines first,
+then the open scout's question and stakes, the directions already tried and left (each with
+what it taught and the observation that turned it), current direction, last notes, decisions
+in force, parked questions with their ids and assumptions, open stubs and transcript paths.
+On `compact` it says so, because automatic compaction keeps only a fraction of side
+constraints.
 
 ## What the model does and what the script does
 
