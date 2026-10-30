@@ -1,0 +1,910 @@
+#!/usr/bin/env python3
+"""spike: state and artifacts for exploratory work.
+
+One folder per spike under spikes/<slug>/. state.json is the source of truth;
+log.md, decisions.md and handoff.md are rendered from it on every change, so
+nothing in them is ever out of step with what the commands recorded.
+
+Pointers, not copies: branches, commits, file:line, transcript paths.
+"""
+import argparse
+import datetime as dt
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+STATE = "state.json"
+CURRENT = ".current"
+SESSION = ".session.json"
+HANDOFF_VERSION = 1
+
+
+# ---------------------------------------------------------------- helpers
+
+def now():
+    return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
+
+
+def short(ts):
+    return ts[:16].replace("T", " ") + "Z" if ts else "?"
+
+
+def die(msg, code=2):
+    print(f"spike: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def git(args, cwd=None, check=True):
+    r = subprocess.run(["git", *args], cwd=cwd, text=True, capture_output=True)
+    if check and r.returncode != 0:
+        die(f"git {' '.join(args)} failed: {r.stderr.strip()}")
+    return r.stdout.strip()
+
+
+def toplevel(cwd=None):
+    r = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=cwd, text=True, capture_output=True)
+    return Path(r.stdout.strip()) if r.returncode == 0 else Path(cwd or os.getcwd()).resolve()
+
+
+def spikes_root(args):
+    root = Path(args.root) if getattr(args, "root", None) else toplevel()
+    return root / "spikes"
+
+
+def slugify(text, limit=40):
+    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    if len(s) > limit:
+        cut = s[:limit + 1].rfind("-")
+        s = s[:cut] if cut > 0 else s[:limit]
+    return s.rstrip("-") or "spike"
+
+
+def load(root, slug):
+    p = root / slug / STATE
+    if not p.exists():
+        die(f"no spike '{slug}' under {root}")
+    return json.loads(p.read_text())
+
+
+def save(root, st):
+    d = root / st["slug"]
+    d.mkdir(parents=True, exist_ok=True)
+    st["updated_at"] = now()
+    (d / STATE).write_text(json.dumps(st, indent=2) + "\n")
+    (d / "log.md").write_text(render_log(st))
+    (d / "decisions.md").write_text(render_decisions(st))
+    if (d / "handoff.md").exists() or st.get("handoff_written"):
+        (d / "handoff.md").write_text(render_handoff(st))
+
+
+def current_slug(root, explicit=None, allow_closed=False):
+    if explicit:
+        return explicit
+    p = root / CURRENT
+    if p.exists() and (root / p.read_text().strip() / STATE).exists():
+        return p.read_text().strip()
+    open_ = [s for s in list_spikes(root) if s["status"] == "open"]
+    if len(open_) == 1:
+        return open_[0]["slug"]
+    if not open_:
+        if allow_closed:
+            closed = sorted(list_spikes(root), key=lambda s: s.get("updated_at", ""))
+            if closed:
+                return closed[-1]["slug"]
+        die("no open spike; run `spike start <question>` first")
+    die("several open spikes; pass --spike <slug>: " + ", ".join(s["slug"] for s in open_))
+
+
+def set_current(root, slug):
+    root.mkdir(parents=True, exist_ok=True)
+    (root / CURRENT).write_text(slug + "\n")
+    gi = root / ".gitignore"
+    if not gi.exists():
+        gi.write_text(f"{SESSION}\n")
+
+
+def list_spikes(root):
+    out = []
+    if not root.exists():
+        return out
+    for d in sorted(root.iterdir()):
+        if (d / STATE).exists():
+            out.append(json.loads((d / STATE).read_text()))
+    return out
+
+
+def cur_direction(st):
+    return st["directions"][-1]
+
+
+def open_decisions(st):
+    return [d for d in st["decisions"] if d["by"] == "open" and not d.get("superseded_by")]
+
+
+def live_decisions(st):
+    return [d for d in st["decisions"] if not d.get("superseded_by")]
+
+
+def read_session_file(root):
+    p = root / SESSION
+    if p.exists():
+        try:
+            return json.loads(p.read_text())
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def record_session(st, sess):
+    if not sess or not sess.get("session_id"):
+        return
+    if any(s["session_id"] == sess["session_id"] for s in st["sessions"]):
+        return
+    st["sessions"].append({
+        "session_id": sess["session_id"],
+        "transcript_path": sess.get("transcript_path"),
+        "recorded_at": now(),
+    })
+
+
+def hours_elapsed(st):
+    start = dt.datetime.fromisoformat(st["opened_at"])
+    end = dt.datetime.fromisoformat(st["closed_at"]) if st.get("closed_at") else dt.datetime.now(dt.timezone.utc)
+    return (end - start).total_seconds() / 3600
+
+
+def box_line(st):
+    b = st["box"]
+    sp = st["spent"]
+    h = f"{sp['hours']:.1f}/{b['hours']}h logged" if b.get("hours") is not None else f"{sp['hours']:.1f}h logged"
+    u = f"${sp['usd']:.2f}/${b['usd']} spawn-metered" if b.get("usd") is not None else f"${sp['usd']:.2f} spawn-metered"
+    return f"{h}, {u}, {hours_elapsed(st):.1f}h on the calendar"
+
+
+# ---------------------------------------------------------------- renders
+
+def render_log(st):
+    L = [f"# Spike: {st['question']}", ""]
+    L.append(f"Opened {short(st['opened_at'])} on branch `{st['branch'] or '(no branch)'}` from `{st['base'][:12] if st['base'] else '?'}`.")
+    b = st["box"]
+    L.append(f"Box: {b.get('hours', '—')} hours, ${b.get('usd', '—')}. Spent: {box_line(st)}.")
+    if st["kill"]:
+        L.append("Kill when: " + "; ".join(st["kill"]) + ".")
+    else:
+        L.append("Kill when: (no kill criteria recorded).")
+    L.append(f"Status: {st['status']}" + (f" ({st['outcome']})" if st.get("outcome") else "") + ".")
+    L.append("")
+    for i, d in enumerate(st["directions"], 1):
+        L.append(f"## Direction {i}: {d['text']}")
+        L.append("")
+        L.append(f"Opened {short(d['opened_at'])}.")
+        for e in d["entries"]:
+            L.append(f"- {short(e['at'])} {e['kind']}: {e['text']}")
+        if d.get("closed_at"):
+            how = d.get("closed_by", "pivot")
+            L.append(f"- {short(d['closed_at'])} closed by {how}. Learned: {d.get('learned') or '(nothing recorded)'}")
+        L.append("")
+    if st.get("variants"):
+        L.append("## Variants")
+        L.append("")
+        for run in st["variants"]:
+            L.append(f"Run {short(run['at'])}: {run['n']} arms, ${run['cap_usd']} cap each, model {run['model']}. Question: {run['question']}")
+            L.append("")
+            L.append("| arm | branch | cost | turns | files | result |")
+            L.append("|---|---|---|---|---|---|")
+            for a in run["arms"]:
+                L.append(f"| v{a['i']} | `{a['branch']}` | ${a.get('cost_usd', 0):.2f} | {a.get('turns', '?')} | {a.get('files_changed', '?')} | {a.get('status', '?')} |")
+            L.append("")
+            L.append(f"Outputs under `spikes/{st['slug']}/variants/run-{run['id']}/`.")
+            L.append("")
+    if st["questions"]:
+        L.append("## Questions parked for the next boundary")
+        L.append("")
+        for q in st["questions"]:
+            mark = "x" if q.get("answered") else " "
+            L.append(f"- [{mark}] {q['text']}" + (f" → {q['answered']}" if q.get("answered") else ""))
+        L.append("")
+    if st["status"] == "closed":
+        L.append(f"## Closed {short(st['closed_at'])}: {st['outcome']}")
+        L.append("")
+        c = st["close"]
+        L.append(f"Tried: {c.get('tried') or '(see directions above)'}")
+        L.append("")
+        L.append(f"Learned: {c.get('learned') or '(nothing recorded)'}")
+        L.append("")
+        L.append(f"Thrown away: {c.get('thrown_away') or '(nothing recorded)'}")
+        L.append("")
+    if st["sessions"]:
+        L.append("## Sessions")
+        L.append("")
+        for s in st["sessions"]:
+            L.append(f"- {s['session_id']} — {s.get('transcript_path') or '(no transcript path)'}")
+        L.append("")
+    return "\n".join(L)
+
+
+def render_decisions(st):
+    L = [f"# Decisions: {st['question']}", ""]
+    L.append("Recovered at the end of a direction or recorded when the operator said so. Never the output of a dialog.")
+    L.append("")
+    if not st["decisions"]:
+        L.append("(none yet)")
+        L.append("")
+    for d in st["decisions"]:
+        L.append(f"## {d['id']} — {d['text']}")
+        L.append("")
+        L.append(f"- settled by: {d['by']}")
+        L.append(f"- evidence: {d.get('evidence') or '(none)'}")
+        L.append(f"- direction: {d['direction']}, recorded {short(d['at'])}")
+        if d.get("superseded_by"):
+            L.append(f"- superseded by: direction {d['superseded_by']}")
+        L.append("")
+    return "\n".join(L)
+
+
+def render_handoff(st):
+    L = [f"# Handoff: {st['question']}", ""]
+    L.append(f"<!-- spike handoff v{HANDOFF_VERSION}; plain markdown, fixed headings; written {short(now())} -->")
+    L.append("")
+    L.append("## Question")
+    L.append("")
+    L.append(st["question"])
+    L.append("")
+    L.append("## Status")
+    L.append("")
+    status = st["status"] + (f", {st['outcome']}" if st.get("outcome") else "")
+    L.append(f"{status}. {len(st['directions'])} direction(s) tried. Box: {box_line(st)}.")
+    if st["kill"]:
+        L.append("Kill criteria: " + "; ".join(st["kill"]) + ".")
+    c = st.get("close") or {}
+    if c.get("learned"):
+        L.append("")
+        L.append("Learned: " + c["learned"])
+    L.append("")
+    L.append("## Decisions")
+    L.append("")
+    L.append("| id | decision | settled by | evidence | superseded by |")
+    L.append("|---|---|---|---|---|")
+    for d in st["decisions"]:
+        sup = f"direction {d['superseded_by']}" if d.get("superseded_by") else ""
+        L.append(f"| {d['id']} | {d['text']} | {d['by']} | {d.get('evidence') or ''} | {sup} |")
+    if not st["decisions"]:
+        L.append("| | (none recorded) | | | |")
+    L.append("")
+    L.append("## Open questions")
+    L.append("")
+    opens = [d for d in open_decisions(st)] 
+    qs = [q for q in st["questions"] if not q.get("answered")]
+    if not opens and not qs:
+        L.append("(none)")
+    for d in opens:
+        L.append(f"- {d['id']}: {d['text']}")
+    for q in qs:
+        L.append(f"- {q['text']}")
+    L.append("")
+    L.append("## Pointers")
+    L.append("")
+    L.append(f"- branch: `{st['branch'] or '(none)'}`")
+    L.append(f"- base: `{st['base'] or '?'}`")
+    L.append(f"- head: `{st.get('head') or '?'}`")
+    for i, d in enumerate(st["directions"], 1):
+        L.append(f"- direction {i}: {d['text']} (opened {short(d['opened_at'])}" + (f", closed {short(d['closed_at'])}" if d.get("closed_at") else "") + ")")
+    for run in st.get("variants", []):
+        for a in run["arms"]:
+            L.append(f"- variant run {run['id']} arm v{a['i']}: `{a['branch']}` @ `{(a.get('commit') or '?')[:12]}`, ${a.get('cost_usd', 0):.2f}")
+    for s in st["sessions"]:
+        L.append(f"- transcript: {s.get('transcript_path') or s['session_id']}")
+    L.append(f"- log: spikes/{st['slug']}/log.md")
+    L.append(f"- decisions: spikes/{st['slug']}/decisions.md")
+    L.append("")
+    if st.get("prereg"):
+        p = st["prereg"]
+        L.append("## Pre-registration")
+        L.append("")
+        L.append(f"- question: {p['question']}")
+        L.append(f"- arms: {p['arms']}")
+        L.append(f"- runs: {p['runs']}")
+        L.append(f"- pass rule: {p['pass_rule']}")
+        L.append(f"- cost bound: ${p['cost_usd']}")
+        L.append(f"- registered: {short(p['at'])} (before any scored run)")
+        L.append("")
+    L.append("## Thrown away")
+    L.append("")
+    L.append(c.get("thrown_away") or "(nothing recorded)")
+    L.append("")
+    return "\n".join(L)
+
+
+# ---------------------------------------------------------------- commands
+
+def cmd_start(args):
+    root = spikes_root(args)
+    slug = args.slug or slugify(args.question)
+    if (root / slug / STATE).exists():
+        die(f"spike '{slug}' already exists")
+    top = root.parent
+    is_repo = subprocess.run(["git", "rev-parse", "--git-dir"], cwd=top, capture_output=True).returncode == 0
+    base = git(["rev-parse", "HEAD"], cwd=top, check=False) if is_repo else ""
+    branch = None
+    if is_repo and not args.no_branch:
+        branch = f"spike/{slug}"
+        if args.worktree:
+            wt = top.parent / f"{top.name}-spike-worktrees" / slug
+            wt.parent.mkdir(parents=True, exist_ok=True)
+            git(["worktree", "add", "-b", branch, str(wt)], cwd=top)
+            top = wt
+            root = wt / "spikes"
+        else:
+            git(["checkout", "-q", "-b", branch], cwd=top)
+    st = {
+        "slug": slug,
+        "question": args.question,
+        "opened_at": now(),
+        "closed_at": None,
+        "status": "open",
+        "outcome": None,
+        "box": {"hours": args.hours, "usd": args.usd},
+        "spent": {"hours": 0.0, "usd": 0.0},
+        "kill": args.kill or [],
+        "branch": branch,
+        "base": base,
+        "head": None,
+        "directions": [{"text": args.direction or args.question, "opened_at": now(), "entries": [], "closed_at": None}],
+        "decisions": [],
+        "questions": [],
+        "variants": [],
+        "sessions": [],
+        "prereg": None,
+        "close": {},
+    }
+    record_session(st, read_session_file(root))
+    save(root, st)
+    set_current(root, slug)
+    print(f"opened spike '{slug}' at {root / slug}" + (f" on branch {branch}" if branch else ""))
+    print("next: explore the code before deciding anything; `spike note` what it says.")
+
+
+def _entry(st, kind, text):
+    cur_direction(st)["entries"].append({"at": now(), "kind": kind, "text": text})
+
+
+def cmd_note(args):
+    root = spikes_root(args)
+    st = load(root, current_slug(root, args.spike))
+    _entry(st, "note", args.text)
+    save(root, st)
+    print("noted")
+
+
+def cmd_question(args):
+    root = spikes_root(args)
+    st = load(root, current_slug(root, args.spike))
+    st["questions"].append({"text": args.text, "at": now(), "direction": len(st["directions"]), "answered": None})
+    _entry(st, "question parked", args.text)
+    save(root, st)
+    print(f"parked for the next boundary ({len([q for q in st['questions'] if not q['answered']])} open)")
+
+
+def cmd_answer(args):
+    root = spikes_root(args)
+    st = load(root, current_slug(root, args.spike))
+    idx = args.index - 1
+    opens = [q for q in st["questions"] if not q["answered"]]
+    if idx < 0 or idx >= len(opens):
+        die(f"no open question #{args.index}")
+    opens[idx]["answered"] = args.text
+    _entry(st, "question answered", f"{opens[idx]['text']} → {args.text}")
+    save(root, st)
+    print("answered")
+
+
+def cmd_decide(args):
+    root = spikes_root(args)
+    st = load(root, current_slug(root, args.spike))
+    d = {
+        "id": f"D{len(st['decisions']) + 1}",
+        "text": args.text,
+        "by": args.by,
+        "evidence": args.evidence,
+        "direction": len(st["directions"]),
+        "at": now(),
+        "superseded_by": None,
+    }
+    st["decisions"].append(d)
+    _entry(st, f"decision {d['id']} ({args.by})", args.text)
+    save(root, st)
+    print(f"{d['id']} recorded, settled by {args.by}")
+
+
+def cmd_spent(args):
+    root = spikes_root(args)
+    st = load(root, current_slug(root, args.spike))
+    if args.hours:
+        st["spent"]["hours"] += args.hours
+    if args.usd:
+        st["spent"]["usd"] += args.usd
+    save(root, st)
+    print(box_line(st))
+    warn_box(st)
+
+
+def warn_box(st):
+    b, sp = st["box"], st["spent"]
+    if b.get("hours") is not None and sp["hours"] >= b["hours"]:
+        print(f"BOX: hours spent ({sp['hours']:.1f}) reached the box ({b['hours']}). Pivot or close.", file=sys.stderr)
+    if b.get("usd") is not None and sp["usd"] >= b["usd"]:
+        print(f"BOX: dollars spent (${sp['usd']:.2f}) reached the box (${b['usd']}). Pivot or close.", file=sys.stderr)
+
+
+def cmd_pivot(args):
+    root = spikes_root(args)
+    st = load(root, current_slug(root, args.spike))
+    if st["status"] != "open":
+        die("spike is closed")
+    cur = cur_direction(st)
+    cur["closed_at"] = now()
+    cur["closed_by"] = "pivot"
+    cur["learned"] = args.learned
+    n_new = len(st["directions"]) + 1
+    for sid in args.supersedes or []:
+        hit = [d for d in st["decisions"] if d["id"] == sid]
+        if not hit:
+            die(f"no decision {sid}")
+        hit[0]["superseded_by"] = n_new
+    st["directions"].append({"text": args.direction, "opened_at": now(), "entries": [], "closed_at": None})
+    top = root.parent
+    st["head"] = git(["rev-parse", "HEAD"], cwd=top, check=False) or st.get("head")
+    save(root, st)
+    set_current(root, st["slug"])
+    print(f"direction {n_new - 1} closed; direction {n_new} open: {args.direction}")
+    if open_decisions(st) or [q for q in st["questions"] if not q["answered"]]:
+        print("boundary reached — raise the parked questions and open decisions with the operator now:")
+        for d in open_decisions(st):
+            print(f"  {d['id']}: {d['text']}")
+        for q in st["questions"]:
+            if not q["answered"]:
+                print(f"  ? {q['text']}")
+
+
+def cmd_close(args):
+    root = spikes_root(args)
+    st = load(root, current_slug(root, args.spike))
+    if st["status"] == "closed":
+        die("already closed")
+    cur = cur_direction(st)
+    cur["closed_at"] = now()
+    cur["closed_by"] = "close"
+    cur["learned"] = args.learned or cur.get("learned")
+    st["status"] = "closed"
+    st["outcome"] = args.outcome
+    st["closed_at"] = now()
+    st["close"] = {"tried": args.tried, "learned": args.learned, "thrown_away": args.thrown_away}
+    top = root.parent
+    st["head"] = git(["rev-parse", "HEAD"], cwd=top, check=False) or st.get("head")
+    save(root, st)
+    cp = root / CURRENT
+    if cp.exists() and cp.read_text().strip() == st["slug"]:
+        cp.unlink()
+    print(f"closed ({args.outcome}). decisions: {len(live_decisions(st))} live, {len(open_decisions(st))} open. next: `spike handoff`.")
+
+
+def cmd_prereg(args):
+    root = spikes_root(args)
+    st = load(root, current_slug(root, args.spike))
+    st["prereg"] = {"question": args.question, "arms": args.arms, "runs": args.runs,
+                    "pass_rule": args.pass_rule, "cost_usd": args.cost_usd, "at": now()}
+    _entry(st, "pre-registered", f"{args.question} — arms: {args.arms}; runs: {args.runs}; pass: {args.pass_rule}; cost ${args.cost_usd}")
+    save(root, st)
+    print("pre-registration recorded; run the scored comparison only after this point")
+
+
+def cmd_handoff(args):
+    root = spikes_root(args)
+    st = load(root, current_slug(root, args.spike, allow_closed=True))
+    st["handoff_written"] = True
+    top = root.parent
+    st["head"] = git(["rev-parse", "HEAD"], cwd=top, check=False) or st.get("head")
+    save(root, st)
+    p = root / st["slug"] / "handoff.md"
+    print(p)
+    if args.print:
+        print(p.read_text())
+
+
+def cmd_status(args):
+    root = spikes_root(args)
+    spikes = list_spikes(root)
+    if not spikes:
+        print(f"no spikes under {root}")
+        return
+    cur = (root / CURRENT).read_text().strip() if (root / CURRENT).exists() else None
+    for st in spikes:
+        mark = "*" if st["slug"] == cur else " "
+        print(f"{mark} {st['slug']}  [{st['status']}{', ' + st['outcome'] if st.get('outcome') else ''}]  {st['question']}")
+        print(f"    box: {box_line(st)}")
+        for i, d in enumerate(st["directions"], 1):
+            state = "open" if not d.get("closed_at") else d.get("closed_by", "closed")
+            print(f"    direction {i} ({state}): {d['text']}")
+        od = open_decisions(st)
+        qs = [q for q in st["questions"] if not q["answered"]]
+        print(f"    decisions: {len(live_decisions(st))} live, {len(od)} open; parked questions: {len(qs)}")
+        if args.verbose:
+            for d in od:
+                print(f"      {d['id']} open: {d['text']}")
+            for q in qs:
+                print(f"      ? {q['text']}")
+
+
+def context_text(st):
+    L = [f"Open spike: {st['question']} (spikes/{st['slug']}/)"]
+    L.append(f"Branch: {st['branch'] or '(none)'}. Box: {box_line(st)}.")
+    if st["kill"]:
+        L.append("Kill when: " + "; ".join(st["kill"]) + ".")
+    L.append(f"Current direction ({len(st['directions'])}): {cur_direction(st)['text']}")
+    notes = cur_direction(st)["entries"][-5:]
+    for e in notes:
+        L.append(f"  - {e['kind']}: {e['text']}")
+    live = live_decisions(st)
+    if live:
+        L.append("Decisions in force: " + "; ".join(f"{d['id']} {d['text']} [{d['by']}]" for d in live))
+    od = open_decisions(st)
+    qs = [q for q in st["questions"] if not q["answered"]]
+    if qs:
+        L.append("Parked questions (raise only at a pivot, a close, or when asked): " + "; ".join(q["text"] for q in qs))
+    L.append(f"Read spikes/{st['slug']}/log.md before continuing. Do not ask the operator mid-build; park questions with `spike question`.")
+    if st["sessions"]:
+        last = st["sessions"][-1]
+        L.append(f"Raw transcript of the previous session: {last.get('transcript_path')}")
+    return "\n".join(L)
+
+
+def cmd_context(args):
+    root = spikes_root(args)
+    cp = root / CURRENT
+    if not cp.exists():
+        return
+    slug = cp.read_text().strip()
+    if not (root / slug / STATE).exists():
+        return
+    print(context_text(load(root, slug)))
+
+
+def cmd_hook_session_start(args):
+    raw = sys.stdin.read()
+    try:
+        payload = json.loads(raw) if raw.strip() else {}
+    except json.JSONDecodeError:
+        payload = {}
+    cwd = payload.get("cwd") or os.getcwd()
+    root = Path(args.root) / "spikes" if args.root else toplevel(cwd) / "spikes"
+    sess = {"session_id": payload.get("session_id"), "transcript_path": payload.get("transcript_path"),
+            "cwd": cwd, "source": payload.get("source"), "at": now()}
+    if sess["session_id"]:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / SESSION).write_text(json.dumps(sess, indent=2) + "\n")
+        gi = root / ".gitignore"
+        if not gi.exists():
+            gi.write_text(f"{SESSION}\n")
+    cp = root / CURRENT
+    if not cp.exists():
+        return
+    slug = cp.read_text().strip()
+    if not (root / slug / STATE).exists():
+        return
+    st = load(root, slug)
+    record_session(st, sess)
+    save(root, st)
+    source = payload.get("source", "startup")
+    head = {"compact": "Context was just compacted. The spike below is the side constraint that survives it.",
+            "resume": "Resumed session. The spike below is where the previous session left off.",
+            "clear": "Context cleared. An open spike is still in progress."}.get(source, "An open spike is in progress in this repository.")
+    text = head + "\n\n" + context_text(st)
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}}))
+
+
+def operator_utterances(path):
+    """Operator text from a Claude Code transcript (jsonl). Format is internal to the
+    CLI and may change; anything unparsable is skipped, never guessed."""
+    out = []
+    p = Path(path)
+    if not p.exists():
+        return out
+    for line in p.read_text(errors="replace").splitlines():
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("type") != "user" or rec.get("isMeta") or rec.get("isSidechain"):
+            continue
+        msg = rec.get("message") or {}
+        content = msg.get("content")
+        texts = []
+        if isinstance(content, str):
+            texts.append(content)
+        elif isinstance(content, list):
+            for c in content:
+                if isinstance(c, dict) and c.get("type") == "text":
+                    texts.append(c.get("text", ""))
+        for t in texts:
+            t = t.strip()
+            if not t or t.startswith("<") or t.startswith("[Request interrupted"):
+                continue
+            out.append((rec.get("timestamp", ""), t))
+    return out
+
+
+def cmd_recover(args):
+    root = spikes_root(args)
+    st = load(root, current_slug(root, args.spike, allow_closed=True))
+    top = root.parent
+    print(f"# Recovery material for spike '{st['slug']}'")
+    print()
+    print("## Log")
+    print()
+    print(render_log(st))
+    print()
+    print("## Commits since base")
+    print()
+    if st["base"]:
+        print(git(["log", "--oneline", f"{st['base']}..HEAD"], cwd=top, check=False) or "(none)")
+        print()
+        print("## Diff stat since base")
+        print()
+        print(git(["diff", "--stat", f"{st['base']}..HEAD"], cwd=top, check=False) or "(none)")
+        print()
+        print("## Uncommitted")
+        print()
+        print(git(["status", "--porcelain"], cwd=top, check=False) or "(clean)")
+    else:
+        print("(no git base recorded)")
+    print()
+    print("## Operator utterances from recorded transcripts")
+    print()
+    print("Lines containing 'record this', 'decide', 'go with', 'settled' are candidates for decisions settled by the operator.")
+    print()
+    any_ = False
+    for s in st["sessions"]:
+        tp = s.get("transcript_path")
+        if not tp:
+            continue
+        utts = operator_utterances(tp)
+        if not utts:
+            continue
+        any_ = True
+        print(f"### {tp}")
+        print()
+        for ts, t in utts:
+            flag = " **" if re.search(r"record this|decide|go with|settled|let's use|we'll use", t, re.I) else ""
+            print(f"- {short(ts)}{flag} {t[:400]}")
+        print()
+    if not any_:
+        print("(no transcripts recorded, or none readable)")
+    print()
+    print("## Decisions already recorded")
+    print()
+    print(render_decisions(st))
+
+
+# ---------------------------------------------------------------- variants
+
+VARIANT_PROMPT = """You are arm v{i} of {n} in a spike. Question: {question}
+
+Rules:
+- Work only inside this directory, which is your own git worktree on branch {branch}. Do not read, list or search any other worktree or branch; other arms are answering the same question and must not see your draft, nor you theirs.
+- Build the smallest thing that answers the question, then stop. Do not ask the operator anything; if a point is undecidable, state your assumption in VARIANT.md and continue.
+- Before finishing, write VARIANT.md at the repository root: what you built, what you found, what you would measure next, every assumption you made. Commit nothing; the harness commits for you.
+- You have a dollar cap of ${cap}. Prefer evidence over polish.
+"""
+
+
+def _run_arm(i, n, st, run_id, top, question, cap, model, tools, timeout, extra_args):
+    wt_root = top.parent / f"{top.name}-spike-worktrees"
+    wt_root.mkdir(parents=True, exist_ok=True)
+    branch = f"spike/{st['slug']}/run{run_id}-v{i}"
+    wt = wt_root / f"{st['slug']}-run{run_id}-v{i}"
+    if wt.exists():
+        shutil.rmtree(wt)
+        git(["worktree", "prune"], cwd=top, check=False)
+    git(["worktree", "add", "-q", "-b", branch, str(wt)], cwd=top)
+    prompt = VARIANT_PROMPT.format(i=i, n=n, question=question, branch=branch, cap=cap)
+    cmd = ["claude", "-p", "--model", model, "--max-budget-usd", str(cap), "--output-format", "json",
+           "--permission-mode", "acceptEdits", "--permission-prompts", "none", "--no-session-persistence"]
+    if tools:
+        cmd += ["--allowedTools", tools]
+    cmd += extra_args
+    cmd.append(prompt)
+    out_dir = Path(st["_root"]) / st["slug"] / "variants" / f"run-{run_id}" / f"v{i}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "prompt.md").write_text(prompt)
+    env = dict(os.environ)
+    env.pop("CLAUDECODE", None)
+    proc = subprocess.Popen(cmd, cwd=wt, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    return {"i": i, "branch": branch, "worktree": str(wt), "proc": proc, "out_dir": out_dir, "started": now()}
+
+
+def _finish_arm(arm, top, timeout):
+    proc = arm["proc"]
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        stdout, stderr = proc.communicate()
+        stderr += "\n[spike: killed on timeout]"
+    out_dir = arm["out_dir"]
+    (out_dir / "stderr.txt").write_text(stderr or "")
+    result = {}
+    try:
+        result = json.loads(stdout) if stdout.strip() else {}
+        if isinstance(result, list):
+            result = next((r for r in reversed(result) if r.get("type") == "result"), {})
+    except json.JSONDecodeError:
+        (out_dir / "stdout.txt").write_text(stdout)
+    (out_dir / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+    (out_dir / "output.md").write_text(str(result.get("result", "")) + "\n")
+    wt = arm["worktree"]
+    vm = Path(wt) / "VARIANT.md"
+    if vm.exists():
+        shutil.copy(vm, out_dir / "VARIANT.md")
+    git(["add", "-A"], cwd=wt, check=False)
+    commit = None
+    if git(["status", "--porcelain"], cwd=wt, check=False):
+        git(["commit", "-q", "-m", f"spike variant v{arm['i']}"], cwd=wt, check=False)
+        commit = git(["rev-parse", "HEAD"], cwd=wt, check=False)
+        stat = git(["diff", "--stat", "HEAD~1..HEAD"], cwd=wt, check=False)
+        (out_dir / "diff.stat").write_text(stat + "\n")
+        files = len([l for l in stat.splitlines() if "|" in l])
+    else:
+        files = 0
+    return {
+        "i": arm["i"], "branch": arm["branch"], "worktree": wt, "commit": commit,
+        "cost_usd": float(result.get("total_cost_usd") or 0.0),
+        "turns": result.get("num_turns"),
+        "status": result.get("subtype") or ("error" if proc.returncode else "unknown"),
+        "exit_code": proc.returncode, "files_changed": files,
+        "session_id": result.get("session_id"),
+    }
+
+
+def cmd_variants(args):
+    root = spikes_root(args)
+    st = load(root, current_slug(root, args.spike))
+    st["_root"] = str(root)
+    if not 2 <= args.n <= 4:
+        die("variants: n must be 2..4; more arms stop being evidence and start being noise")
+    top = root.parent
+    if git(["status", "--porcelain"], cwd=top, check=False) and not args.allow_dirty:
+        die("working tree is dirty; commit first so every arm starts from the same base (or --allow-dirty)")
+    run_id = len(st["variants"]) + 1
+    question = args.question or st["question"]
+    if args.dry_run:
+        for i in range(1, args.n + 1):
+            print(f"would run arm v{i}: worktree {top.parent / (top.name + '-spike-worktrees') / (st['slug'] + f'-run{run_id}-v{i}')}, cap ${args.usd}, model {args.model}")
+        return
+    arms = [_run_arm(i, args.n, st, run_id, top, question, args.usd, args.model, args.tools, args.timeout, args.claude_args or [])
+            for i in range(1, args.n + 1)]
+    print(f"{args.n} arms running (cap ${args.usd} each, model {args.model})...", file=sys.stderr)
+    results = [_finish_arm(a, top, args.timeout) for a in arms]
+    del st["_root"]
+    run = {"id": run_id, "at": now(), "n": args.n, "question": question, "cap_usd": args.usd, "model": args.model, "arms": results}
+    st["variants"].append(run)
+    st["spent"]["usd"] += sum(r["cost_usd"] for r in results)
+    _entry(st, "variants", f"run {run_id}: {args.n} arms on '{question}', total ${sum(r['cost_usd'] for r in results):.2f}")
+    save(root, st)
+    print(f"run {run_id} done. compare the arms as evidence — outputs under spikes/{st['slug']}/variants/run-{run_id}/")
+    print("| arm | branch | cost | turns | files | status |")
+    print("|---|---|---|---|---|---|")
+    for r in results:
+        print(f"| v{r['i']} | {r['branch']} | ${r['cost_usd']:.2f} | {r['turns']} | {r['files_changed']} | {r['status']} |")
+    warn_box(st)
+
+
+# ---------------------------------------------------------------- main
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="spike", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--root", help="repository root (default: git toplevel of cwd)")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    s = sub.add_parser("start", help="open a spike: folder, log, box, kill criteria, branch")
+    s.add_argument("question")
+    s.add_argument("--hours", type=float)
+    s.add_argument("--usd", type=float)
+    s.add_argument("--kill", action="append", help="kill criterion (repeatable)")
+    s.add_argument("--direction", help="first direction (default: the question)")
+    s.add_argument("--slug")
+    s.add_argument("--worktree", action="store_true", help="work in a new worktree instead of a branch in place")
+    s.add_argument("--no-branch", action="store_true")
+    s.set_defaults(fn=cmd_start)
+
+    for name, fn, help_ in [("note", cmd_note, "append a note to the current direction"),
+                            ("question", cmd_question, "park a question for the next boundary")]:
+        s = sub.add_parser(name, help=help_)
+        s.add_argument("text")
+        s.add_argument("--spike")
+        s.set_defaults(fn=fn)
+
+    s = sub.add_parser("answer", help="answer parked question #N")
+    s.add_argument("index", type=int)
+    s.add_argument("text")
+    s.add_argument("--spike")
+    s.set_defaults(fn=cmd_answer)
+
+    s = sub.add_parser("decide", help="record a decision with its provenance")
+    s.add_argument("text")
+    s.add_argument("--by", choices=["operator", "code", "open"], required=True)
+    s.add_argument("--evidence", help="pointer: file:line, commit, transcript line, URL")
+    s.add_argument("--spike")
+    s.set_defaults(fn=cmd_decide)
+
+    s = sub.add_parser("spent", help="log hours or dollars against the box")
+    s.add_argument("--hours", type=float)
+    s.add_argument("--usd", type=float)
+    s.add_argument("--spike")
+    s.set_defaults(fn=cmd_spent)
+
+    s = sub.add_parser("pivot", help="close the current direction, open the next")
+    s.add_argument("direction")
+    s.add_argument("--learned", help="what the closed direction taught")
+    s.add_argument("--supersedes", type=lambda v: [x.strip() for x in v.split(",") if x.strip()], help="D1,D2")
+    s.add_argument("--spike")
+    s.set_defaults(fn=cmd_pivot)
+
+    s = sub.add_parser("close", help="kill or commit")
+    s.add_argument("--outcome", choices=["kill", "commit"], required=True)
+    s.add_argument("--tried")
+    s.add_argument("--learned")
+    s.add_argument("--thrown-away")
+    s.add_argument("--spike")
+    s.set_defaults(fn=cmd_close)
+
+    s = sub.add_parser("prereg", help="pre-register a measurable question before its scored run")
+    s.add_argument("--question", required=True)
+    s.add_argument("--arms", required=True)
+    s.add_argument("--runs", required=True)
+    s.add_argument("--pass-rule", required=True)
+    s.add_argument("--cost-usd", type=float, required=True)
+    s.add_argument("--spike")
+    s.set_defaults(fn=cmd_prereg)
+
+    s = sub.add_parser("handoff", help="write handoff.md")
+    s.add_argument("--spike")
+    s.add_argument("--print", action="store_true")
+    s.set_defaults(fn=cmd_handoff)
+
+    s = sub.add_parser("status", help="list spikes, directions, boxes, open decisions")
+    s.add_argument("-v", "--verbose", action="store_true")
+    s.set_defaults(fn=cmd_status)
+
+    s = sub.add_parser("recover", help="print everything needed to recover decisions after the fact")
+    s.add_argument("--spike")
+    s.set_defaults(fn=cmd_recover)
+
+    s = sub.add_parser("context", help="print the re-injection text for the open spike")
+    s.set_defaults(fn=cmd_context)
+
+    s = sub.add_parser("hook-session-start", help="SessionStart hook body (reads hook JSON on stdin)")
+    s.set_defaults(fn=cmd_hook_session_start)
+
+    s = sub.add_parser("variants", help="run 2..4 arms of one question in separate worktrees")
+    s.add_argument("n", type=int)
+    s.add_argument("question", nargs="?")
+    s.add_argument("--usd", type=float, default=2.0, help="dollar cap per arm")
+    s.add_argument("--model", default="opus")
+    s.add_argument("--tools", default="Bash", help="--allowedTools for each arm ('' for none)")
+    s.add_argument("--timeout", type=int, default=1800)
+    s.add_argument("--allow-dirty", action="store_true")
+    s.add_argument("--dry-run", action="store_true")
+    s.add_argument("--claude-args", nargs=argparse.REMAINDER, help="extra args passed to claude -p")
+    s.add_argument("--spike")
+    s.set_defaults(fn=cmd_variants)
+
+    args = ap.parse_args(argv)
+    args.fn(args)
+
+
+if __name__ == "__main__":
+    main()

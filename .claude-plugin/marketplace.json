@@ -1,0 +1,12 @@
+{
+  "name": "spike",
+  "owner": { "name": "Manol Donev" },
+  "metadata": { "description": "Spike-style work: prototypes and research where the direction pivots and the decisions appear once something is built." },
+  "plugins": [
+    {
+      "name": "spike",
+      "source": "./plugins/spike",
+      "description": "/spike:start, /spike:spike (conversation), /spike:note, /spike:variants, /spike:pivot, /spike:close, /spike:handoff, /spike:status, plus a SessionStart hook that re-injects the open spike after compaction."
+    }
+  ]
+}
