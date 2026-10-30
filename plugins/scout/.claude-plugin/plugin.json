@@ -1,0 +1,17 @@
+{
+  "name": "scout",
+  "description": "Skills for work where the decisions are discovered by building: time-and-dollar-boxed scouts with a running log, cheap pivots, side-by-side variants, decision recovery at close, and a plain-markdown handoff any spec-driven tool can read.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Manol Donev"
+  },
+  "license": "MIT",
+  "keywords": [
+    "scout",
+    "scout",
+    "prototype",
+    "research",
+    "exploration",
+    "handoff"
+  ]
+}

@@ -1,7 +1,7 @@
 # The handoff file
 
-`spikes/<slug>/handoff.md` is one plain markdown file with fixed headings. Nothing in it
-depends on which tool reads it. It is regenerated from `state.json` by `/spike:handoff`;
+`scouting/<slug>/handoff.md` is one plain markdown file with fixed headings. Nothing in it
+depends on which tool reads it. It is regenerated from `state.json` by `/scout:handoff`;
 to change it, change the record (`decide`, `answer`, `question`, `prereg`) and run handoff
 again.
 
@@ -9,7 +9,7 @@ again.
 
 ```
 # Handoff: <question>
-<!-- spike handoff v1; plain markdown, fixed headings; written <timestamp> -->
+<!-- scout-ahead handoff v1; plain markdown, fixed headings; written <timestamp> -->
 
 ## Question
 ## Status
@@ -28,7 +28,7 @@ The version marker in the HTML comment lets a reader detect the shape without pa
   pointer: a file:line, a commit, a transcript path, the operator's quoted words. A
   superseded decision stays in the table with `superseded by: direction N`; the reader
   treats it as history, not as a constraint.
-- **Open questions.** Everything the spike did not settle: open decisions by id, and parked
+- **Open questions.** Everything the scout did not settle: open decisions by id, and parked
   questions nobody answered at a boundary.
 - **Pointers.** Branch and commits resolve with `git rev-parse`; transcript paths are the
   raw session traces (`~/.claude/projects/…/<session>.jsonl`), which beat structured notes

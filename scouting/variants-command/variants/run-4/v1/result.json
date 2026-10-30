@@ -1,0 +1,101 @@
+{
+  "duration_api_ms": 54484,
+  "stop_reason": "end_turn",
+  "session_id": "17c11d90-d3ee-43e2-bb78-d88d92d1a18f",
+  "total_cost_usd": 0.43287060000000005,
+  "usage": {
+    "input_tokens": 12,
+    "cache_creation_input_tokens": 36167,
+    "cache_read_input_tokens": 228233,
+    "output_tokens": 4892,
+    "output_tokens_details": {
+      "thinking_tokens": 654
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 36167,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 867,
+        "cache_read_input_tokens": 47142,
+        "cache_creation_input_tokens": 2231,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 2231
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 12,
+      "outputTokens": 4892,
+      "cacheReadInputTokens": 228233,
+      "cacheCreationInputTokens": 36167,
+      "webSearchRequests": 0,
+      "costUSD": 0.43287060000000005,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 654,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 36167,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 8,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "My recommendation is to keep rendering all three markdown files from `state.json` on every command, not switch to appending. The full write-up is in `VARIANT.md` at the repo root. I didn't change `scout.py` or commit anything; I tested its current behaviour in a scratch git repo.\n\n**Why rendering:** much of what the files show changes after it's first written. Examples:\n- the `Status:` line and the spent line at the top of `log.md`;\n- a parked question flipping from `[ ]` to `[x] \u2192 answer`;\n- the \"superseded by\" marker on an earlier decision;\n- the whole of `handoff.md`.\n\nAppending can't update a line that's already in the file. It would leave a second line that contradicts the first.\n\n**Strongest argument against:** rendering makes the files output-only. The next `scout` command wipes anything a person or agent typed into them, even an unrelated one like `scout spent`, with no warning.\n\n**Failure cases:**\n- **Rendering (tested):** I added a line by hand to `log.md`, then ran `scout note`. The line was gone. Separately, `handoff.md` contains a \"written at\" timestamp, so every later command rewrites it and creates a git diff with no real change.\n- **Appending (reasoned):** after `scout question` then `scout answer`, the current output is one line, `- [x] which? \u2192 this` (tested). An appended log would keep `- [ ] which?` near the top and add the answer further down. Someone reading top-down at a direction change would see a question that was already answered.\n\n**A problem in both approaches (tested):** I ran 10 `scout note` commands at once and only 3 of the 10 notes survived, in both `state.json` and `log.md`. Each command reads `state.json`, changes it and writes it back with no lock, so parallel runs overwrite each other. Appending would have kept all 10 lines in `log.md` while `state.json` kept 3, so the files would quietly disagree. The fix is a lock around the read-and-write, plus writing each file via a temp file and rename.\n\n**Proposed fix for the lost-edits problem (not built):** add a \"generated from state.json; edits are overwritten\" banner to each file. Or have the script refuse to write when a file differs from what it last rendered, so a lost edit becomes a loud error.\n\n**What I'd measure next:**\n- how often agents actually edit these files by hand;\n- whether commands ever run at the same time in real use;\n- how badly each approach conflicts when two branches add notes to the same scout.\n\n**Assumptions:** `state.json` stays the source of truth either way, and readers want the current view rather than an append-only history (the entries list in `state.json` already serves as that history).",
+  "ttft_ms": 2330,
+  "type": "result",
+  "duration_ms": 118922,
+  "uuid": "0cd36888-d70f-4179-9c80-c36a8c1e9fe3",
+  "ttft_stream_ms": 1639,
+  "time_to_request_ms": 38,
+  "first_content_frame_ms": 1640,
+  "queued_turn_count": 0,
+  "result_index": 0
+}

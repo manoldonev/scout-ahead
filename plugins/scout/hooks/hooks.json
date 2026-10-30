@@ -1,0 +1,17 @@
+{
+  "description": "Re-inject the open scout's direction and open decisions after compaction, on resume and at startup; record the session's transcript path for the successor.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
