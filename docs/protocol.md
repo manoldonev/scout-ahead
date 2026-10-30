@@ -28,13 +28,15 @@ common path.
 4. **Decisions are written at the end of a direction, not the start.** `decisions.md` is
    never the output of a dialog: it is recorded when the operator says "record this", or
    recovered at the close from the diff and the transcript. Each decision carries who settled
-   it: `operator` (their words, quoted, or a transcript pointer; the script refuses it without
-   one), `code` (a constraint with a file:line or commit, labelled `proved` when this scout
-   observed it and `inferred` when reasoned from elsewhere), or `open` (with the question to
-   ask). A later direction that reverses a decision marks it superseded and leaves it in
-   place; a replacement decision marks the old one by id. Before closing, the inferred ones
-   are re-run: the setup exists by then, and an inference is where a scout is most confidently
-   wrong.
+   it: `operator` (their words or a transcript pointer; the script checks the words verbatim
+   against the operator's recorded turns, never a compaction summary, and only another
+   operator decision supersedes one), `code` (a constraint with a file:line or commit,
+   labelled `proved` only when this scout saw the check fail with the mechanism reverted or
+   stubbed, at a named seat, and `inferred` otherwise), or `open` (with the question to
+   ask). Each decision records the commit its evidence was cited against. A later direction
+   that reverses a decision marks it superseded and leaves it in place; a replacement decision
+   marks the old one by id. Before closing, the inferred ones are re-run: the setup exists by
+   then, and an inference is where a scout is most confidently wrong.
 4a. **Kill and keep criteria are fixed before the build**, and re-read before a pivot or close,
    not after. The close gives the question a verdict, `proven`, `disproven`, `conditional` or
    `unanswered`, and lists what is still unknown, because a scout that names what it did not

@@ -52,6 +52,9 @@ check "conversation answered in prose" '[ "$(wc -w < "$WORK/.last-result")" -gt 
 check "no option dialog in conversation mode" '! grep -qiE "option [ab]\)|^\s*[0-9]\. \*\*(Option|Choice)" "$WORK/.last-result"'
 check "no decision recorded without 'record this'" '[ "$(python3 -c "import json;print(len(json.load(open(\"scouting/$SLUG/state.json\"))[\"decisions\"]))")" = 0 ]'
 
+run record "/scout:think record this: coerce with float()" --resume "$SID"
+check "'record this' recorded an operator decision (quote verified)" 'python3 -c "import json,sys;sys.exit(0 if any(d[\"by\"]==\"operator\" for d in json.load(open(\"scouting/$SLUG/state.json\"))[\"decisions\"]) else 1)"'
+
 run status "/scout:status" --resume "$SID"
 check "status names the scout" 'grep -q "$SLUG" "$WORK/.last-result" || grep -qi "total over floats" "$WORK/.last-result"'
 

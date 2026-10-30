@@ -25,15 +25,21 @@ The version marker in the HTML comment lets a reader detect the shape without pa
 
 ## Fields
 
-- **Decisions.** `settled by` is one of `operator`, `code, proved`, `code, inferred`, `open`. The file states the mapping onto ledger-style vocabularies itself (`user-answered`, `codebase-derived`, `deferred`; why-log's testimony / stated / inferred), so a reader with a closed provenance enum needs no plugin knowledge. An `operator` row always carries a quote or a transcript pointer. `evidence` is a
-  pointer: a file:line, a commit, a transcript path, the operator's quoted words. A
+- **Decisions.** `settled by` is one of `operator`, `code, proved`, `code, inferred`, `open`. The file states the mapping onto ledger-style vocabularies itself (`user-answered`, `codebase-derived`, `deferred`; why-log's testimony / stated / inferred), so a reader with a closed provenance enum needs no plugin knowledge. An `operator` row always carries a transcript pointer or a quote the script found verbatim in a
+  recorded operator turn (compaction summaries excluded), and only another operator decision
+  supersedes it. `code, proved` means the check was seen to fail with the mechanism reverted,
+  and the evidence names that run and its seat. `evidence` is a pointer: a file:line, a commit,
+  a transcript path, the operator's quoted words, followed by `@ <sha12>` for the commit it was
+  cited against and `+dirty` when the tree had uncommitted changes then. A
   superseded decision stays in the table with `superseded by: direction N`; the reader
   treats it as history, not as a constraint.
 - **Open questions.** Everything the scout did not settle: open decisions by id, and parked
   questions nobody answered at a boundary.
 - **Pointers.** Branch and commits resolve with `git rev-parse`; transcript paths are the
   raw session traces (`~/.claude/projects/…/<session>.jsonl`), which beat structured notes
-  for a successor.
+  for a successor. The generator marks a branch `(missing)`, `(no commits past base)` or
+  `(not pushed)`, and a transcript `(local to this machine)` or `(missing)`, so a reader knows
+  which pointers it can follow.
 - **Pre-registration.** `question`, `arms`, `runs`, `pass rule`, `cost bound`, and when it
   was registered. It is written before any scored run; a scored track runs it as given. An
   A/B harness such as [agent-ab](https://github.com/h-a-forster/agent-ab) is the natural consumer.
@@ -57,5 +63,6 @@ The version marker in the HTML comment lets a reader detect the shape without pa
   than pasting diffs.
 
 The generator refuses to write a handoff that drops a decision id, a direction, a branch or an
-open question from the record (a cover check). A tool that reads only the Decisions table and
-the Open questions list has what it needs.
+open question from the record (a cover check), or that points at a scout branch that no longer
+exists. A tool that reads only the Decisions table and the Open questions list has what it
+needs.

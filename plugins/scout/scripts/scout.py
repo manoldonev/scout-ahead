@@ -46,6 +46,26 @@ def git(args, cwd=None, check=True):
     return r.stdout.strip()
 
 
+STDIN_FIELDS = ("text", "evidence", "learned", "verdict_note")
+
+
+def _text(v):
+    return sys.stdin.read().rstrip("\n") if v == "-" else v
+
+
+def read_stdin_fields(args):
+    """`-` reads the value from stdin, so operator words reach the record without shell quoting."""
+    dashed = [f for f in STDIN_FIELDS if getattr(args, f, None) == "-"]
+    if len(dashed) > 1:
+        die("only one argument per call can be read from stdin; got '-' for " + ", ".join(dashed))
+    for f in dashed:
+        setattr(args, f, _text(getattr(args, f)))
+
+
+def head_commit(top):
+    return git(["rev-parse", "--verify", "--quiet", "HEAD"], cwd=top, check=False) or None
+
+
 def toplevel(cwd=None):
     r = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=cwd, text=True, capture_output=True)
     return Path(r.stdout.strip()) if r.returncode == 0 else Path(cwd or os.getcwd()).resolve()
@@ -120,6 +140,38 @@ def list_scouts(root):
 
 def cur_direction(st):
     return st["directions"][-1]
+
+
+def evidence_label(d):
+    ev = d.get("evidence")
+    if not ev:
+        return ""
+    ev = " ".join(ev.splitlines())
+    if d.get("at_commit"):
+        ev += f" @ {d['at_commit'][:12]}" + ("+dirty" if d.get("dirty") else "")
+    return ev
+
+
+def branch_exists(b, top):
+    return subprocess.run(["git", "rev-parse", "--verify", "--quiet", b], cwd=top, capture_output=True).returncode == 0
+
+
+def branch_mark(b, base, top):
+    if not b or top is None:
+        return ""
+    if not branch_exists(b, top):
+        return " (missing)"
+    if base and git(["rev-list", "--count", f"{base}..{b}"], cwd=top, check=False) == "0":
+        return " (no commits past base)"
+    if subprocess.run(["git", "rev-parse", "--abbrev-ref", f"{b}@{{u}}"], cwd=top, capture_output=True).returncode != 0:
+        return " (not pushed)"
+    return ""
+
+
+def transcript_mark(p):
+    if not p:
+        return ""
+    return " (local to this machine)" if Path(p).exists() else " (missing)"
 
 
 def by_label(d):
@@ -262,7 +314,7 @@ def render_decisions(st):
         L.append(f"## {d['id']} — {d['text']}")
         L.append("")
         L.append(f"- settled by: {by_label(d)}")
-        L.append(f"- evidence: {d.get('evidence') or '(none)'}")
+        L.append(f"- evidence: {evidence_label(d) or '(none)'}")
         if d.get("ask"):
             L.append(f"- question to ask: {d['ask']}")
         L.append(f"- direction: {d['direction']}, recorded {short(d['at'])}")
@@ -274,7 +326,7 @@ def render_decisions(st):
     return "\n".join(L)
 
 
-def render_handoff(st):
+def render_handoff(st, top=None):
     L = [f"# Handoff: {st['question']}", ""]
     L.append(f"<!-- scout-ahead handoff v{HANDOFF_VERSION}; plain markdown, fixed headings; written {short(now())}; generated from state.json, regenerate with `scout handoff` -->")
     L.append("")
@@ -302,7 +354,7 @@ def render_handoff(st):
     L.append("| id | decision | settled by | evidence | superseded by |")
     L.append("|---|---|---|---|---|")
     for d in st["decisions"]:
-        L.append(f"| {d['id']} | {d['text']} | {by_label(d)} | {d.get('evidence') or ''} | {superseded_label(d)} |")
+        L.append(f"| {d['id']} | {d['text']} | {by_label(d)} | {evidence_label(d)} | {superseded_label(d)} |")
     if not st["decisions"]:
         L.append("| | (none recorded) | | | |")
     L.append("")
@@ -321,16 +373,17 @@ def render_handoff(st):
     L.append("")
     L.append("## Pointers")
     L.append("")
-    L.append(f"- branch: `{st['branch'] or '(none)'}`")
+    L.append(f"- branch: `{st['branch'] or '(none)'}`" + branch_mark(st["branch"], st["base"], top))
     L.append(f"- base: `{st['base'] or '?'}`")
     L.append(f"- head: `{st.get('head') or '?'}`")
     for i, d in enumerate(st["directions"], 1):
         L.append(f"- direction {i}: {d['text']} (opened {short(d['opened_at'])}" + (f", closed {short(d['closed_at'])}" if d.get("closed_at") else "") + ")")
+    # Arms fork from the scout's head, not its base; the arm line shows its own commit instead.
     for run in st.get("variants", []):
         for a in run["arms"]:
-            L.append(f"- variant run {run['id']} arm v{a['i']}: `{a['branch']}` @ `{(a.get('commit') or '?')[:12]}`, ${a.get('cost_usd', 0):.2f}")
+            L.append(f"- variant run {run['id']} arm v{a['i']}: `{a['branch']}`{branch_mark(a['branch'], None, top)} @ `{(a.get('commit') or '?')[:12]}`, ${a.get('cost_usd', 0):.2f}")
     for s in st["sessions"]:
-        L.append(f"- transcript: {s.get('transcript_path') or s['session_id']}")
+        L.append(f"- transcript: {s.get('transcript_path') or s['session_id']}{transcript_mark(s.get('transcript_path'))}")
     L.append(f"- log: scouting/{st['slug']}/log.md")
     L.append(f"- decisions: scouting/{st['slug']}/decisions.md")
     L.append("")
@@ -415,6 +468,7 @@ def _entry(st, kind, text):
 
 
 def cmd_note(args):
+    read_stdin_fields(args)
     root = scouts_root(args)
     st = load(root, current_slug(root, args.scout))
     _entry(st, "note", args.text)
@@ -423,6 +477,7 @@ def cmd_note(args):
 
 
 def cmd_question(args):
+    read_stdin_fields(args)
     root = scouts_root(args)
     st = load(root, current_slug(root, args.scout))
     st["questions"].append({"text": args.text, "at": now(), "direction": len(st["directions"]), "answered": None})
@@ -444,19 +499,67 @@ def cmd_answer(args):
     print("answered")
 
 
+def _is_file(text):
+    try:
+        return Path(text).expanduser().is_file()
+    except (OSError, ValueError):
+        return False
+
+
+def recorded_transcripts(root, st):
+    paths = [s.get("transcript_path") for s in st["sessions"]]
+    sess = read_session_file(root)
+    if sess:
+        paths.append(sess.get("transcript_path"))
+    out = []
+    for tp in paths:
+        if tp and tp not in out:
+            out.append(tp)
+    return out
+
+
+def verify_operator_quote(root, st, evidence):
+    if _is_file(evidence):
+        return
+    quote = " ".join(evidence.split())
+    if len(quote) < 10:
+        die(f"an operator quote needs at least 10 characters, got {quote!r}; quote what they decided, not their assent")
+    readable = [tp for tp in recorded_transcripts(root, st) if Path(tp).is_file()]
+    if not readable:
+        die("no recorded transcript is readable, so the quote cannot be checked; pass the transcript path as --evidence, or record it --by open --ask")
+    for tp in readable:
+        for _, t in operator_utterances(tp):
+            if quote in " ".join(t.split()):
+                return
+    die("quote not found verbatim in any recorded operator turn; quote one contiguous span exactly, pass the transcript path, or record it --by open --ask")
+
+
 def cmd_decide(args):
+    read_stdin_fields(args)
     root = scouts_root(args)
     st = load(root, current_slug(root, args.scout))
     if args.by == "operator" and not args.evidence:
         die("an operator decision needs --evidence: the operator's words, quoted, or a transcript pointer; without one record it --by open")
     if args.proof and args.by != "code":
         die("--proof applies to --by code only")
+    if args.proof == "proved" and not args.evidence:
+        die("a proved decision needs the observation: the command and its output, the revert run, file:line")
     new_id = f"D{len(st['decisions']) + 1}"
+    replaced = []
     for sid in args.supersedes or []:
         hit = [x for x in st["decisions"] if x["id"] == sid]
         if not hit:
             die(f"no decision {sid}")
-        hit[0]["superseded_by"] = new_id
+        if hit[0]["by"] == "operator" and args.by != "operator":
+            die(f"{sid} was settled by the operator; only the operator can supersede it. Record the conflict instead: "
+                f"--by open --ask \"{sid} said …; the code shows … — keep {sid}?\"")
+        replaced.append(hit[0])
+    if args.by == "operator":
+        verify_operator_quote(root, st, args.evidence)
+    for x in replaced:
+        x["superseded_by"] = new_id
+    top = root.parent
+    # The scout's own folder is uncommitted for most of its life; counting it would mark every decision dirty.
     d = {
         "id": new_id,
         "text": args.text,
@@ -468,6 +571,8 @@ def cmd_decide(args):
         "direction": len(st["directions"]),
         "at": now(),
         "superseded_by": None,
+        "at_commit": head_commit(top),
+        "dirty": bool(git(["status", "--porcelain", "--", ".", f":!{root.name}"], cwd=top, check=False)),
     }
     st["decisions"].append(d)
     _entry(st, f"decision {d['id']} ({by_label(d)})", args.text)
@@ -496,6 +601,7 @@ def warn_box(st):
 
 
 def cmd_pivot(args):
+    read_stdin_fields(args)
     root = scouts_root(args)
     st = load(root, current_slug(root, args.scout))
     if st["status"] != "open":
@@ -505,19 +611,24 @@ def cmd_pivot(args):
     cur["closed_by"] = "pivot"
     cur["learned"] = args.learned
     n_new = len(st["directions"]) + 1
+    operator_marked = []
     for sid in args.supersedes or []:
         hit = [d for d in st["decisions"] if d["id"] == sid]
         if not hit:
             die(f"no decision {sid}")
         hit[0]["superseded_by"] = n_new
+        if hit[0]["by"] == "operator":
+            operator_marked.append(hit[0])
     st["directions"].append({"text": args.direction, "opened_at": now(), "entries": [], "closed_at": None})
     top = root.parent
     st["head"] = git(["rev-parse", "HEAD"], cwd=top, check=False) or st.get("head")
     save(root, st)
     set_current(root, st["slug"])
     print(f"direction {n_new - 1} closed; direction {n_new} open: {args.direction}")
-    if open_decisions(st) or [q for q in st["questions"] if not q["answered"]]:
+    if operator_marked or open_decisions(st) or [q for q in st["questions"] if not q["answered"]]:
         print("boundary reached — raise the parked questions and open decisions with the operator now:")
+        for d in operator_marked:
+            print(f"  {d['id']} (operator's, superseded by this pivot): {d['text']}")
         for d in open_decisions(st):
             print(f"  {d['id']}: {d['text']}")
         for q in st["questions"]:
@@ -526,6 +637,7 @@ def cmd_pivot(args):
 
 
 def cmd_close(args):
+    read_stdin_fields(args)
     root = scouts_root(args)
     st = load(root, current_slug(root, args.scout))
     if st["status"] == "closed":
@@ -564,8 +676,10 @@ def cmd_handoff(args):
     top = root.parent
     st["head"] = git(["rev-parse", "HEAD"], cwd=top, check=False) or st.get("head")
     save(root, st)
+    if st["branch"] and not branch_exists(st["branch"], top) and not args.no_check:
+        die(f"handoff points at a scout branch that does not exist: {st['branch']}")
     p = root / st["slug"] / "handoff.md"
-    text = render_handoff(st)
+    text = render_handoff(st, top)
     missing = cover_gaps(st, text)
     if missing and not args.no_check:
         die("handoff would drop: " + "; ".join(missing))
@@ -705,6 +819,9 @@ def operator_utterances(path):
             continue
         if rec.get("type") != "user" or rec.get("isMeta") or rec.get("isSidechain"):
             continue
+        # A compaction summary is recorded as a user line but written by the model.
+        if rec.get("isCompactSummary") or rec.get("isVisibleInTranscriptOnly"):
+            continue
         msg = rec.get("message") or {}
         content = msg.get("content")
         texts = []
@@ -716,9 +833,13 @@ def operator_utterances(path):
                     texts.append(c.get("text", ""))
         for t in texts:
             t = t.strip()
-            if not t or t.startswith("<") or t.startswith("[Request interrupted"):
+            if t.startswith("<command-message>") or t.startswith("<command-name>"):
+                m = re.search(r"<command-args>(.*?)</command-args>", t, re.S)
+                t = m.group(1).strip() if m else ""
+            elif t.startswith("<") or t.startswith("[Request interrupted") or t.startswith("This session is being continued"):
                 continue
-            out.append((rec.get("timestamp", ""), t))
+            if t:
+                out.append((rec.get("timestamp", ""), t))
     return out
 
 
@@ -927,7 +1048,7 @@ def main(argv=None):
     for name, fn, help_ in [("note", cmd_note, "append a note to the current direction"),
                             ("question", cmd_question, "park a question for the next boundary")]:
         s = sub.add_parser(name, help=help_)
-        s.add_argument("text")
+        s.add_argument("text", help="'-' reads stdin")
         s.add_argument("--scout")
         s.set_defaults(fn=fn)
 
@@ -938,9 +1059,9 @@ def main(argv=None):
     s.set_defaults(fn=cmd_answer)
 
     s = sub.add_parser("decide", help="record a decision with its provenance")
-    s.add_argument("text")
+    s.add_argument("text", help="'-' reads stdin")
     s.add_argument("--by", choices=["operator", "code", "open"], required=True)
-    s.add_argument("--evidence", help="pointer: file:line, commit, transcript line, URL; for --by operator, the quoted words or the transcript")
+    s.add_argument("--evidence", help="pointer: file:line, commit, transcript line, URL; for --by operator, the quoted words (checked verbatim against the recorded operator turns) or the transcript path; '-' reads stdin")
     s.add_argument("--proof", choices=["proved", "inferred"], help="--by code only: proved = observed in this scout (output, measurement, file:line); inferred = reasoned from elsewhere (default)")
     s.add_argument("--ask", help="--by open only: the question to put to the operator at the next boundary")
     s.add_argument("--supersedes", type=lambda v: [x.strip() for x in v.split(",") if x.strip()], help="D1,D2: decisions this one replaces")
@@ -955,7 +1076,7 @@ def main(argv=None):
 
     s = sub.add_parser("pivot", help="close the current direction, open the next")
     s.add_argument("direction")
-    s.add_argument("--learned", help="what the closed direction taught")
+    s.add_argument("--learned", help="what the closed direction taught; '-' reads stdin")
     s.add_argument("--supersedes", type=lambda v: [x.strip() for x in v.split(",") if x.strip()], help="D1,D2")
     s.add_argument("--scout")
     s.set_defaults(fn=cmd_pivot)
@@ -963,10 +1084,10 @@ def main(argv=None):
     s = sub.add_parser("close", help="kill or commit")
     s.add_argument("--outcome", choices=["kill", "commit"], required=True, help="what happens to the work")
     s.add_argument("--verdict", choices=["proven", "disproven", "conditional", "unanswered"], help="what happened to the question")
-    s.add_argument("--verdict-note", help="for conditional: the thing held fixed; for disproven: why the wall is structural")
+    s.add_argument("--verdict-note", help="for conditional: the thing held fixed; for disproven: why the wall is structural; '-' reads stdin")
     s.add_argument("--unknown", action="append", help="what this scout did not settle (repeatable)")
     s.add_argument("--tried")
-    s.add_argument("--learned")
+    s.add_argument("--learned", help="'-' reads stdin")
     s.add_argument("--thrown-away")
     s.add_argument("--scout")
     s.set_defaults(fn=cmd_close)

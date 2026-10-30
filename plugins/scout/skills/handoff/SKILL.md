@@ -25,7 +25,7 @@ Produce `scouting/<slug>/handoff.md`: the decisions with provenance, the open qu
 
    The command refuses to write a handoff that drops a decision id, a direction, a branch or an open question from the record; fix the record, not the file.
 
-3. Read it back once as the downstream reader would: every decision has a settled-by and an evidence pointer, every open question is a question, every pointer resolves (`git rev-parse` the commits). If something is missing, fix it with `decide`, `answer`, `question` or `note`, and run `handoff` again; never edit `handoff.md` by hand, it is regenerated.
+3. Read it back once as the downstream reader would: every decision has a settled-by and an evidence pointer, and every open question is a question. The script marks each branch `(missing)`, `(no commits past base)` or `(not pushed)` and each transcript `(local to this machine)` or `(missing)`, and refuses only when the scout branch itself is missing; push what the downstream reader must be able to follow. The evidence column is free text, so check those pointers by hand; each carries the commit it was cited against (`@ <sha>`, `+dirty` when the tree had uncommitted changes). If something is missing, fix it with `decide`, `answer`, `question` or `note`, and run `handoff` again; never edit `handoff.md` by hand, it is regenerated.
 
 4. Commit the scout folder. Give the operator the path and the count of settled vs open decisions, and propose where the verdict should land (the issue the scout was commissioned from, a new ticket, or nowhere, which is a complete result too); filing it is outward-facing, so propose and stop.
 

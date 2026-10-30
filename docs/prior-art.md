@@ -12,6 +12,9 @@
 - GSD: the first direction is the one most likely to kill the idea.
 - gamedev `prototype-fast`, bigpowers: keep criteria beside kill criteria.
 - spikekit: the pending-decision idea is what `scout question` already does; the handoff's open-decision rows now carry the question to ask.
+- passbaton `human-turn.ts`, why-log `validate.py`, Pocock `/handoff`, Continuity frozen guard: the script checks an `operator` quote verbatim (whitespace-normalized, at least 10 characters) against the human turns of the recorded transcripts, with compaction summaries excluded and slash-command arguments included; operator words travel on stdin (`-`), not inside shell quotes; only an operator decision supersedes an operator decision.
+- prp-spike "Making the evidence followable", passbaton decision-index commit stamp: the handoff marks branches missing, without commits or not pushed and transcripts local or missing, refuses a missing scout branch, and each decision records the commit (and dirty flag) its evidence was cited against.
+- HASH `ln-spec` units of record, Continuity capture criteria, agent-lab-kit claim-guard, hordev negative control, prp-spike seat: a decision is one choice between live alternatives at one seam, framing and standing instructions are `operator`, and `proved` needs a check seen to fail with the mechanism reverted, named with its seat; the script refuses `proved` without evidence.
 
 Not borrowed, and why: passbaton's transcript-uuid gating (scout state is repository-level, so re-injecting it in any session of that repository is correct); hordev's token-count budgets (the CLI's `--max-budget-usd` is enforced between turns, prompt text is not); spikekit's deletion of the scratch directory at wrap (pointers, not summaries).
 

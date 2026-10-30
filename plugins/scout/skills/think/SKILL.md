@@ -33,10 +33,12 @@ Read `scouting/<slug>/log.md` first if it is not already in context (the open sc
 Only when the operator says "record this" (or an unmistakable equivalent):
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scout.py" decide "<the decision in the operator's words>" --by operator --evidence "<their words, quoted>"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scout.py" decide "<the decision, in one line>" --by operator --evidence - <<'EOF'
+<their words, exactly as they typed them>
+EOF
 ```
 
-`--evidence` for an operator decision is their words, quoted, or a transcript pointer; the script refuses an operator decision without one. `--by code --proof proved|inferred` is for decisions the code settled: `proved` when this scout observed it (a command's output, a measurement, a file:line read), `inferred` when it is reasoning from elsewhere. `--by open --ask "<question>"` is for something that must be decided later, with the question to put to the operator. A decision that replaces an earlier one takes `--supersedes D1`; the old one stays as history. Never record a decision because you think one was made; the operator says so, or it is recovered at the close.
+`--evidence` for an operator decision is their words or a transcript path. The script checks the words verbatim against the operator's recorded turns: one contiguous span, at least 10 characters, nothing paraphrased; a compaction summary does not count, and neither does a bare "yes". `--by code --proof proved|inferred` is for decisions the code settled: `proved` only when this scout saw the check fail with the mechanism reverted or stubbed, with the evidence naming that run and the seat (process, layer and mode) it was observed from; otherwise `inferred`. `--by open --ask "<question>"` is for something that must be decided later, with the question to put to the operator. A decision that replaces an earlier one takes `--supersedes D1`; the old one stays as history. Never record a decision because you think one was made; the operator says so, or it is recovered at the close.
 
 ## When the direction is spent
 
@@ -44,6 +46,7 @@ Say so in one line and offer `/scout:pivot <new direction>` or `/scout:close`. D
 
 ## Never
 
+- Put the operator's words inside double quotes; they go through the quoted heredoc, where `$`, backticks and quotes arrive as typed.
 - Ask the operator a question mid-build that could be parked.
 - Pull anything into context by similarity search; read the log and the files the operator and the code point to.
 - Write a customer, client or employer name into any scout artifact. Copy what the operator wrote; everything from outside gets a pointer, not a copy.

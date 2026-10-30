@@ -31,9 +31,21 @@ class ScoutRepo(unittest.TestCase):
         sh(["git", "add", "a.txt"], self.repo)
         sh(["git", "commit", "-q", "-m", "init"], self.repo)
         self.base = sh(["git", "rev-parse", "HEAD"], self.repo).stdout.strip()
+        self.fixtures = tempfile.TemporaryDirectory()
 
     def tearDown(self):
         self.tmp.cleanup()
+        self.fixtures.cleanup()
+
+    def transcript(self, name, records):
+        tp = Path(self.fixtures.name).resolve() / name
+        tp.write_text("\n".join(json.dumps(r) for r in records) + "\n")
+        return tp
+
+    def add_session(self, slug, tp):
+        st = self.state(slug)
+        st["sessions"].append({"session_id": tp.stem, "transcript_path": str(tp)})
+        (self.repo / "scouting" / slug / "state.json").write_text(json.dumps(st))
 
     def scout(self, *args, check=True, stdin=None):
         return sh([sys.executable, str(SCRIPT), *args], self.repo, stdin=stdin, check=check)
@@ -68,7 +80,8 @@ class ScoutRepo(unittest.TestCase):
         self.assertIn("superseded by: direction 2", (self.repo / "scouting" / slug / "decisions.md").read_text())
 
         self.scout("answer", "1", "no, per process")
-        self.scout("decide", "ship the bypass", "--by", "operator", "--evidence", "transcript")
+        tp = self.transcript("loop.jsonl", [{"type": "user", "message": {"content": "record this: ship the bypass"}}])
+        self.scout("decide", "ship the bypass", "--by", "operator", "--evidence", str(tp))
         self.scout("decide", "cache eviction policy", "--by", "open")
         out = self.scout("close", "--outcome", "commit", "--tried", "cache, bypass", "--learned", "bypass wins", "--thrown-away", "cache branch").stdout
         self.assertIn("closed (commit)", out)
@@ -80,8 +93,8 @@ class ScoutRepo(unittest.TestCase):
         out = self.scout("handoff", "--print").stdout
         for heading in ["## Question", "## Status", "## Decisions", "## Open questions", "## Pointers", "## Pre-registration", "## Thrown away"]:
             self.assertIn(heading, out)
-        self.assertIn("| D2 | ship the bypass | operator | transcript |", out)
-        self.assertIn("| D1 | use the existing cache | code, inferred | a.txt:1 | direction 2 |", out)
+        self.assertIn(f"| D2 | ship the bypass | operator | {tp} @ {self.base[:12]} |", out)
+        self.assertIn(f"| D1 | use the existing cache | code, inferred | a.txt:1 @ {self.base[:12]} | direction 2 |", out)
         self.assertIn("- D3: cache eviction policy", out)
         self.assertIn(f"- base: `{self.base}`", out)
         self.assertIn("p50 under 10ms", out)
@@ -108,6 +121,9 @@ class ScoutRepo(unittest.TestCase):
         self.assertIn("needs --evidence", r.stderr)
         r = self.scout("decide", "use X", "--by", "open", "--proof", "proved", check=False)
         self.assertEqual(r.returncode, 2)
+        r = self.scout("decide", "x", "--by", "code", "--proof", "proved", check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("a proved decision needs the observation", r.stderr)
         self.scout("decide", "use X", "--by", "code", "--evidence", "a.txt:1")
         self.scout("decide", "use Y instead", "--by", "code", "--proof", "proved", "--evidence", "run output", "--supersedes", "D1")
         self.scout("decide", "eviction policy", "--by", "open", "--ask", "LRU or TTL?")
@@ -127,7 +143,7 @@ class ScoutRepo(unittest.TestCase):
         self.assertIn("Verdict on the question: CONDITIONAL — only if the cache is per process", log)
         self.assertIn("- cold start", log)
         out = self.scout("handoff", "--print").stdout
-        self.assertIn("| D1 | use X | code, inferred | a.txt:1 | D2 |", out)
+        self.assertIn(f"| D1 | use X | code, inferred | a.txt:1 @ {self.base[:12]} | D2 |", out)
         self.assertIn("- D3: eviction policy — ask: LRU or TTL?", out)
         self.assertIn("## Still unknown", out)
         self.assertIn("- behaviour under concurrency", out)
@@ -152,6 +168,62 @@ class ScoutRepo(unittest.TestCase):
         self.assertIn("handoff would drop: question: unrendered?", r.stderr)
         r = sp.run([sys.executable, str(broken), "handoff", "--no-check"], cwd=self.repo, text=True, capture_output=True)
         self.assertEqual(r.returncode, 0)
+
+    def test_operator_quote_verified(self):
+        self.scout("start", "q quote", "--no-branch")
+        real = "go with the bypass, but keep `$HOME/.cache` untouched"
+        self.add_session("q-quote", self.transcript("s1.jsonl", [
+            {"type": "user", "message": {"content": real}},
+            {"type": "user", "isCompactSummary": True, "message": {"content": "Summary: the operator decided to go with X for the cache"}},
+        ]))
+        current = self.transcript("s2.jsonl", [
+            {"type": "user", "message": {"content": [{"type": "text", "text":
+                "<command-message>scout:think</command-message><command-args>record this: use the bypass</command-args>"}]}},
+        ])
+        (self.repo / "scouting" / ".session.json").write_text(json.dumps({"session_id": "s2", "transcript_path": str(current)}))
+
+        self.scout("decide", "bypass the cache", "--by", "operator", "--evidence", "go with the bypass")
+        r = self.scout("decide", "use X", "--by", "operator", "--evidence", "the operator decided to go with X", check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("quote not found verbatim", r.stderr)
+        self.scout("decide", "bypass", "--by", "operator", "--evidence", "use the bypass")
+        r = self.scout("decide", "bypass", "--by", "operator", "--evidence", "yes", check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("at least 10 characters", r.stderr)
+        quote = "keep `$HOME/.cache` untouched"
+        self.scout("decide", "leave the cache dir", "--by", "operator", "--evidence", "-", stdin=quote + "\n")
+        self.assertEqual(self.state("q-quote")["decisions"][-1]["evidence"], quote)
+        r = self.scout("decide", "-", "--by", "operator", "--evidence", "-", stdin=quote, check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("only one argument per call", r.stderr)
+
+        r = self.scout("decide", "keep the cache", "--by", "code", "--evidence", "a.txt:1", "--supersedes", "D1", check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("D1 was settled by the operator", r.stderr)
+        self.assertIsNone(self.state("q-quote")["decisions"][0]["superseded_by"])
+
+    def test_handoff_pointer_marks(self):
+        self.scout("start", "q marks")
+        branch = "scout/q-marks"
+        self.add_session("q-marks", self.transcript("s1.jsonl", []))
+        self.assertIn(f"- branch: `{branch}` (no commits past base)", self.scout("handoff", "--print").stdout)
+        (self.repo / "a.txt").write_text("b\n")
+        sh(["git", "commit", "-q", "-am", "change a"], self.repo)
+        head = sh(["git", "rev-parse", "HEAD"], self.repo).stdout.strip()
+        self.scout("decide", "x", "--by", "code", "--evidence", "a.txt:1")
+        out = self.scout("handoff", "--print").stdout
+        self.assertIn(f"- branch: `{branch}` (not pushed)", out)
+        self.assertIn(f"- transcript: {Path(self.fixtures.name).resolve() / 's1.jsonl'} (local to this machine)", out)
+        self.assertIn(f"| a.txt:1 @ {head[:12]} |", out)
+
+        sh(["git", "checkout", "-q", "main"], self.repo)
+        sh(["git", "branch", "-q", "-D", branch], self.repo)
+        r = self.scout("handoff", check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn(f"scout branch that does not exist: {branch}", r.stderr)
+        r = self.scout("handoff", "--no-check", "--print", check=False)
+        self.assertEqual(r.returncode, 0)
+        self.assertIn(f"- branch: `{branch}` (missing)", r.stdout)
 
     def test_slug_cuts_on_word_boundary(self):
         self.scout("start", "Can a hook re-inject the scout after compaction happens?", "--no-branch")
@@ -228,6 +300,11 @@ class ScoutRepo(unittest.TestCase):
             {"type": "user", "isMeta": True, "message": {"content": "meta"}},
             {"type": "assistant", "message": {"content": "no"}},
             {"type": "user", "message": {"content": [{"type": "text", "text": "and note the cost"}]}, "timestamp": "2026-10-30T10:01:00Z"},
+            {"type": "user", "isCompactSummary": True, "message": {"content": "Summary: we decided to go with the cache"}},
+            {"type": "user", "message": {"content": "This session is being continued from a previous conversation. go with the cache"}},
+            {"type": "user", "message": {"content": "<command-message>scout:think</command-message><command-args>record this: use the bypass</command-args>"},
+             "timestamp": "2026-10-30T10:02:00Z"},
+            {"type": "user", "message": {"content": "<command-message>scout:status</command-message><command-args></command-args>"}},
         ]
         tp.write_text("\n".join(json.dumps(l) for l in lines) + "\nnot json\n")
         (self.repo / "b.txt").write_text("b\n")
@@ -239,7 +316,11 @@ class ScoutRepo(unittest.TestCase):
         out = self.scout("recover").stdout
         self.assertIn("** let's record this: go with the bypass", out)
         self.assertIn("- 2026-10-30 10:01Z and note the cost", out)
-        self.assertNotIn("meta", out.split("## Operator utterances")[1])
+        utts = out.split("## Operator utterances")[1].split("## Decisions already recorded")[0]
+        self.assertNotIn("meta", utts)
+        self.assertNotIn("go with the cache", utts)
+        self.assertIn("- 2026-10-30 10:02Z ** record this: use the bypass", utts)
+        self.assertNotIn("command-", utts)
         self.assertIn("add b", out)
         self.assertIn("b.txt", out)
 
