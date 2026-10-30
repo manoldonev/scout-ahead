@@ -10,7 +10,7 @@ Goal (operator's words): iterate on the prior art till we have nothing more to b
 
 ## How to continue in a new session
 
-1. Judge the 220 unjudged candidates from `round-1/results.json` with a judge-only workflow: pass the candidates as `args`, one judge agent per candidate on Opus (Fable budget is the scarce one), same VERDICT schema and rules as in `round-script.js`, then the planner stage. Readers do not need to run again.
+1. Do NOT judge the 220 unjudged candidates one agent each (the operator will not fund it). Instead: in the main loop, read `round-1/results.json`, drop duplicates across sources, keep `value: high` with `cost: small|medium` (expect 25-40). Then ONE Opus agent reads that shortlist against the checkout and returns a ranked implementation list (the planner stage's job). Readers do not run again.
 2. Implement the ranked accepts in `plugins/scout/scripts/scout.py`, the skills and docs; add a test per mechanic in `tests/test_scout.py`; `./selftest.sh`; commit; push. Append each borrow to "What was borrowed" in `docs/prior-art.md`.
 3. Run round 2 with `round-script.js` (set judges to `model: 'opus'`), sources unchanged plus anything the unsearched-tail reader was meant to cover (naishtech/cadet-agent cadet-spike, DEFRA/ai-sdlc-content-audit spike, mistakenot/skills tech-spike, majiayu000/claude-skill-registry spike entries).
 4. Stop when a round accepts nothing.
